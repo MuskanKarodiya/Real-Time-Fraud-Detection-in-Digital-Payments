@@ -84,42 +84,6 @@ The system is divided into 6 layers:
 
 ---
 
-## 📅 4-Week Execution Plan
-
-### ✅ Week 1 — Data Foundation & Pipeline
-| Day | Task | Status |
-|-----|------|--------|
-| Day 1–2 | Problem definition, KPI identification, dataset selection, architecture design | ✅ Done |
-| Day 3–4 | Cloud environment setup, data ingestion to PostgreSQL | ⬜ Pending |
-| Day 5 | Project structure setup, Git LFS tracking | ⬜ Pending |
-| Day 6–7 | ETL scripts, data quality checks, initial EDA | ⬜ Pending |
-
-### ⬜ Week 2 — Feature Engineering & Model Training
-| Day | Task | Status |
-|-----|------|--------|
-| Day 1–2 | Feature engineering (SMOTE, class imbalance handling) | ⬜ Pending |
-| Day 3–4 | Baseline model training + Optuna hyperparameter tuning | ⬜ Pending |
-| Day 5 | Model evaluation — precision-recall curves | ⬜ Pending |
-| Day 6–7 | Model serialization + training metadata tracking | ⬜ Pending |
-
-### ⬜ Week 3 — Productionization & API Deployment
-| Day | Task | Status |
-|-----|------|--------|
-| Day 1–2 | FastAPI development with Pydantic validation | ⬜ Pending |
-| Day 3 | Prediction engine + caching | ⬜ Pending |
-| Day 4–5 | Dockerization (Dockerfile + docker-compose) | ⬜ Pending |
-| Day 6–7 | Cloud deployment + endpoint testing | ⬜ Pending |
-
-### ⬜ Week 4 — Monitoring, CI/CD & Observability
-| Day | Task | Status |
-|-----|------|--------|
-| Day 1–2 | CI/CD pipeline setup (GitHub Actions) | ⬜ Pending |
-| Day 3 | Prometheus/Grafana monitoring + logging | ⬜ Pending |
-| Day 4 | Load testing to verify latency KPIs | ⬜ Pending |
-| Day 5 | Final documentation, README update, project demo | ⬜ Pending |
-
----
-
 ## 📁 Project Structure
 
 > *Will be updated as the project evolves*
