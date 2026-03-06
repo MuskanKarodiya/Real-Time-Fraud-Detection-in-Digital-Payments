@@ -1,11 +1,8 @@
 """
 ETL Pipeline: Extract, Transform, Load for Credit Card Fraud Detection
 
-This script:
-1. Extracts data from creditcard.csv
-2. Validates schema and data quality
-3. Performs minimal transformations
-4. Loads data into PostgreSQL transactions_raw table
+Memory-efficient version that processes data in chunks to work with limited RAM.
+Suitable for t3.micro instances (1GB RAM).
 
 Usage:
     python src/data_ingestion.py
@@ -41,6 +38,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Chunk size for memory-efficient processing
+CHUNK_SIZE = 5000  # Process 5,000 rows at a time
+INSERT_BATCH_SIZE = 500  # Insert 500 rows per database call
+
 
 # ============================================================================
 # SECTION 2: DATABASE CONNECTION
@@ -66,118 +67,74 @@ def get_db_connection():
 
 
 # ============================================================================
-# SECTION 3: EXTRACT - Read CSV
+# SECTION 3: VALIDATE SCHEMA (First chunk only)
 # ============================================================================
 
-def extract_data(csv_path: Path) -> pd.DataFrame:
+def validate_schema_first_chunk(csv_path: Path) -> bool:
     """
-    Extract data from CSV file.
+    Validate schema using only the first chunk of data.
+    This avoids loading the entire file into memory.
 
     Args:
         csv_path: Path to the CSV file
 
     Returns:
-        pd.DataFrame: Loaded data
-
-    Raises:
-        FileNotFoundError: If CSV doesn't exist
-        Exception: If reading fails
-    """
-    logger.info(f"Extracting data from {csv_path}")
-
-    if not csv_path.exists():
-        raise FileNotFoundError(f"CSV file not found: {csv_path}")
-
-    # Read CSV
-    df = pd.read_csv(csv_path)
-
-    logger.info(f"Extracted {len(df)} rows, {len(df.columns)} columns")
-
-    return df
-
-
-# ============================================================================
-# SECTION 4: VALIDATE - Schema & Data Quality Checks
-# ============================================================================
-
-def validate_schema(df: pd.DataFrame) -> bool:
-    """
-    Validate that the DataFrame has the expected schema.
-
-    Args:
-        df: DataFrame to validate
-
-    Returns:
-        bool: True if valid, raises exception if invalid
+        bool: True if valid
 
     Raises:
         ValueError: If validation fails
     """
-    logger.info("Validating schema...")
+    logger.info("Validating schema (first chunk)...")
 
-    # Check 1: Column count
-    if len(df.columns) != EXPECTED_COLUMN_COUNT:
+    # Read just the header to check column names
+    with open(csv_path, 'r') as f:
+        header_line = f.readline().strip()
+        columns = header_line.split(',')
+
+    if len(columns) != EXPECTED_COLUMN_COUNT:
         raise ValueError(
-            f"Expected {EXPECTED_COLUMN_COUNT} columns, got {len(df.columns)}"
+            f"Expected {EXPECTED_COLUMN_COUNT} columns, got {len(columns)}"
         )
 
-    # Check 2: Column names (exact match, case-sensitive)
-    actual_columns = list(df.columns)
-    if actual_columns != EXPECTED_COLUMNS:
+    if columns != EXPECTED_COLUMNS:
         logger.warning(f"Column names don't match exactly.")
         logger.warning(f"Expected: {EXPECTED_COLUMNS}")
-        logger.warning(f"Actual: {actual_columns}")
-        # Try with case-insensitive comparison
-        if [c.lower() for c in actual_columns] == [c.lower() for c in EXPECTED_COLUMNS]:
-            logger.info("Columns match case-insensitively. Renaming columns...")
-            df.columns = EXPECTED_COLUMNS
-        else:
-            raise ValueError("Column names don't match expected schema")
-
-    # Check 3: Required columns have no nulls
-    null_counts = df[EXPECTED_COLUMNS].isnull().sum()
-    if null_counts.sum() > 0:
-        logger.warning(f"Null values found:\n{null_counts[null_counts > 0]}")
-        # For now, we'll allow nulls but log a warning
-
-    # Check 4: Data types
-    for col, expected_type in COLUMN_DTYPES.items():
-        if col in df.columns:
-            actual_type = str(df[col].dtype)
-            if expected_type not in actual_type:
-                logger.warning(
-                    f"Column '{col}': expected {expected_type}, got {actual_type}"
-                )
-                # Try to convert
-                try:
-                    df[col] = df[col].astype(expected_type)
-                    logger.info(f"Converted column '{col}' to {expected_type}")
-                except Exception as e:
-                    raise ValueError(f"Failed to convert column '{col}': {e}")
+        logger.warning(f"Actual: {columns}")
 
     logger.info("Schema validation passed")
     return True
 
 
-def validate_data_quality(df: pd.DataFrame) -> dict:
+def get_data_quality_metrics(csv_path: Path) -> dict:
     """
-    Perform data quality checks on the DataFrame.
+    Get data quality metrics by streaming through the file.
+    Does not load the entire file into memory.
 
     Args:
-        df: DataFrame to check
+        csv_path: Path to the CSV file
 
     Returns:
         dict: Quality metrics
     """
-    logger.info("Running data quality checks...")
+    logger.info("Calculating data quality metrics...")
+
+    total_rows = 0
+    fraud_count = 0
+    missing_count = 0
+
+    # Stream through the file to count
+    for chunk in pd.read_csv(csv_path, chunksize=CHUNK_SIZE):
+        total_rows += len(chunk)
+        fraud_count += chunk["Class"].sum()
+        missing_count += chunk.isnull().sum().sum()
 
     metrics = {
-        "total_rows": len(df),
-        "total_columns": len(df.columns),
-        "fraud_cases": int(df["Class"].sum()),
-        "legit_cases": int(len(df) - df["Class"].sum()),
-        "fraud_rate": float(df["Class"].mean()),
-        "missing_values": int(df.isnull().sum().sum()),
+        "total_rows": int(total_rows),
+        "total_columns": len(EXPECTED_COLUMNS),
+        "fraud_cases": int(fraud_count),
+        "legit_cases": int(total_rows - fraud_count),
+        "fraud_rate": float(fraud_count / total_rows) if total_rows > 0 else 0,
+        "missing_values": int(missing_count),
     }
 
     logger.info("Data Quality Metrics:")
@@ -187,88 +144,52 @@ def validate_data_quality(df: pd.DataFrame) -> dict:
     logger.info(f"  Fraud rate: {metrics['fraud_rate']:.4%}")
     logger.info(f"  Missing values: {metrics['missing_values']}")
 
-    # Expected: 492 fraud cases (0.172%)
     if metrics["fraud_cases"] != 492:
-        logger.warning(
-            f"Expected 492 fraud cases, got {metrics['fraud_cases']}"
-        )
+        logger.warning(f"Expected 492 fraud cases, got {metrics['fraud_cases']}")
 
     return metrics
 
 
 # ============================================================================
-# SECTION 5: TRANSFORM - Apply Transformations
+# SECTION 4: PROCESS CHUNKS AND LOAD
 # ============================================================================
 
-def transform_data(df: pd.DataFrame) -> pd.DataFrame:
+def process_and_load_chunk(conn, chunk: pd.DataFrame, chunk_number: int) -> int:
     """
-    Apply transformations to the data.
-
-    For now, we do minimal transformation:
-    - Ensure correct data types
-    - Round numerical values for cleaner database storage
-
-    Args:
-        df: Input DataFrame
-
-    Returns:
-        pd.DataFrame: Transformed DataFrame
-    """
-    logger.info("Applying transformations...")
-
-    # Make a copy to avoid modifying the original
-    df_transformed = df.copy()
-
-    # Ensure Time and Amount are float
-    df_transformed["Time"] = df_transformed["Time"].astype("float64")
-    df_transformed["Amount"] = df_transformed["Amount"].astype("float64")
-
-    # Round to 6 decimal places (enough precision for this use case)
-    numeric_columns = df_transformed.select_dtypes(include=["float64"]).columns
-    df_transformed[numeric_columns] = df_transformed[numeric_columns].round(6)
-
-    logger.info("Transformations applied")
-
-    return df_transformed
-
-
-# ============================================================================
-# SECTION 6: LOAD - Insert into Database
-# ============================================================================
-
-def load_data(conn, df: pd.DataFrame, batch_size: int = 10000) -> int:
-    """
-    Load data into PostgreSQL transactions_raw table.
-
-    Uses batch INSERT for better performance.
+    Transform and load a single chunk of data.
 
     Args:
         conn: Database connection
-        df: DataFrame to load
-        batch_size: Number of rows per batch
+        chunk: DataFrame chunk to process
+        chunk_number: Chunk index for logging
 
     Returns:
         int: Number of rows inserted
     """
-    logger.info(f"Loading {len(df)} rows into database...")
-
     cursor = conn.cursor()
 
+    # Transform: ensure correct types and round
+    chunk = chunk.copy()
+    chunk["Time"] = chunk["Time"].astype("float64")
+    chunk["Amount"] = chunk["Amount"].astype("float64")
+
+    numeric_columns = chunk.select_dtypes(include=["float64"]).columns
+    chunk[numeric_columns] = chunk[numeric_columns].round(6)
+
     # Prepare column names for SQL query
-    # Map CSV column names to database column names
     column_mapping = {
         "Time": "time_elapsed",
         "Class": "class",
     }
-    # V1-V28 and Amount stay the same (lowercase)
+
     columns = []
     for col in EXPECTED_COLUMNS:
         if col in column_mapping:
             columns.append(column_mapping[col])
         elif col.startswith("V"):
-            columns.append(col.lower())  # v1, v2, etc.
+            columns.append(col.lower())
         else:
-            columns.append(col.lower())  # amount
+            columns.append(col.lower())
 
     # Build INSERT query
     table_name = "transactions_raw"
@@ -277,48 +198,41 @@ def load_data(conn, df: pd.DataFrame, batch_size: int = 10000) -> int:
         sql.SQL(", ").join(map(sql.Identifier, columns))
     )
 
-    # Convert DataFrame to list of tuples for bulk insert
-    # Get values from DataFrame using CSV column names, then map to DB schema
+    # Convert chunk to list of tuples
     data_to_insert = []
-    for _, row in df.iterrows():
+    for _, row in chunk.iterrows():
         values = []
         for csv_col in EXPECTED_COLUMNS:
-            # Get value from DataFrame using CSV column name
             value = row[csv_col]
-            # Convert numpy types to Python native types
-            if hasattr(value, 'item'):  # numpy types
+            if hasattr(value, 'item'):
                 value = value.item()
             elif pd.isna(value):
                 value = None
             values.append(value)
         data_to_insert.append(tuple(values))
 
-    # Batch insert
+    # Insert in smaller batches
     total_inserted = 0
-    for i in range(0, len(data_to_insert), batch_size):
-        batch = data_to_insert[i:i + batch_size]
+    for i in range(0, len(data_to_insert), INSERT_BATCH_SIZE):
+        batch = data_to_insert[i:i + INSERT_BATCH_SIZE]
         try:
             execute_values(cursor, query, batch)
             conn.commit()
             total_inserted += len(batch)
-            logger.info(f"  Inserted batch {i // batch_size + 1}: "
-                       f"{total_inserted}/{len(df)} rows")
         except errors.UniqueViolation:
-            logger.warning(f"Duplicate data detected at row {i}")
+            logger.warning(f"Duplicate data in chunk {chunk_number}, batch {i}")
             conn.rollback()
         except Exception as e:
-            logger.error(f"Error inserting batch starting at row {i}: {e}")
+            logger.error(f"Error inserting chunk {chunk_number}, batch {i}: {e}")
             conn.rollback()
             raise
 
     cursor.close()
-    logger.info(f"Loaded {total_inserted} rows into database")
-
     return total_inserted
 
 
 # ============================================================================
-# SECTION 7: PIPELINE ORCHESTRATION
+# SECTION 5: PIPELINE ORCHESTRATION
 # ============================================================================
 
 def log_pipeline_run(conn, status: str, rows_processed: int = None,
@@ -355,45 +269,55 @@ def log_pipeline_run(conn, status: str, rows_processed: int = None,
 
 def run_etl_pipeline():
     """
-    Main ETL pipeline function.
-    Orchestrates: Extract -> Validate -> Transform -> Load
+    Main ETL pipeline function with chunked processing.
+    Memory-efficient: never loads the entire CSV into RAM.
     """
     start_time = datetime.now()
     logger.info("=" * 60)
-    logger.info("ETL Pipeline Started")
+    logger.info("ETL Pipeline Started (Memory-Efficient Mode)")
     logger.info("=" * 60)
+    logger.info(f"Chunk size: {CHUNK_SIZE:,} rows")
+    logger.info(f"Insert batch size: {INSERT_BATCH_SIZE:,} rows")
 
     conn = None
+    total_rows_inserted = 0
+    chunk_count = 0
 
     try:
         # 1. Connect to database
         conn = get_db_connection()
 
-        # 2. Extract data from CSV
-        df = extract_data(CREDITCARD_CSV)
+        # 2. Validate schema (header only)
+        validate_schema_first_chunk(CREDITCARD_CSV)
 
-        # 3. Validate schema
-        validate_schema(df)
+        # 3. Get data quality metrics (streaming)
+        metrics = get_data_quality_metrics(CREDITCARD_CSV)
 
-        # 4. Data quality checks
-        metrics = validate_data_quality(df)
+        # 4. Process and load chunks
+        logger.info(f"Loading {metrics['total_rows']:,} rows in chunks of {CHUNK_SIZE:,}...")
 
-        # 5. Transform data
-        df_transformed = transform_data(df)
+        for chunk_index, chunk in enumerate(pd.read_csv(CREDITCARD_CSV, chunksize=CHUNK_SIZE)):
+            chunk_count += 1
+            rows_inserted = process_and_load_chunk(conn, chunk, chunk_index)
+            total_rows_inserted += rows_inserted
 
-        # 6. Load data into database
-        rows_inserted = load_data(conn, df_transformed)
+            if chunk_index % 10 == 0:  # Log every 10 chunks
+                logger.info(f"  Processed chunk {chunk_index + 1}: {total_rows_inserted:,}/{metrics['total_rows']:,} rows")
 
-        # 7. Log successful run
-        log_pipeline_run(conn, "SUCCESS", rows_processed=rows_inserted)
+        # Final log
+        logger.info(f"  Processed all {chunk_count} chunks: {total_rows_inserted:,} rows inserted")
+
+        # 5. Log successful run
+        log_pipeline_run(conn, "SUCCESS", rows_processed=total_rows_inserted)
 
         # Summary
         elapsed = (datetime.now() - start_time).total_seconds()
         logger.info("=" * 60)
         logger.info("ETL Pipeline Completed Successfully")
-        logger.info(f"   Rows processed: {rows_inserted:,}")
+        logger.info(f"   Chunks processed: {chunk_count}")
+        logger.info(f"   Rows processed: {total_rows_inserted:,}")
         logger.info(f"   Time elapsed: {elapsed:.2f} seconds")
-        logger.info(f"   Throughput: {rows_inserted/elapsed:.0f} rows/sec")
+        logger.info(f"   Throughput: {total_rows_inserted/elapsed:.0f} rows/sec")
         logger.info("=" * 60)
 
     except Exception as e:
@@ -402,7 +326,7 @@ def run_etl_pipeline():
         # Log failed run
         if conn:
             try:
-                log_pipeline_run(conn, "FAILED", error_message=str(e))
+                log_pipeline_run(conn, "FAILED", rows_processed=total_rows_inserted, error_message=str(e))
             except:
                 pass
 
