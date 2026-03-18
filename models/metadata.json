@@ -1,0 +1,50 @@
+{
+  "model_name": "Fraud Detector v1.0",
+  "training_date": "2026-03-17T15:07:51.230840",
+  "technique": "baseline",
+  "threshold": 0.5,
+  "features": [
+    "v1",
+    "v2",
+    "v3",
+    "v4",
+    "v5",
+    "v6",
+    "v7",
+    "v8",
+    "v9",
+    "v10",
+    "v11",
+    "v12",
+    "v13",
+    "v14",
+    "v15",
+    "v16",
+    "v17",
+    "v18",
+    "v19",
+    "v20",
+    "v21",
+    "v22",
+    "v23",
+    "v24",
+    "v25",
+    "v26",
+    "v27",
+    "v28",
+    "hour_sin",
+    "hour_cos",
+    "amount_scaled"
+  ],
+  "metrics": {
+    "roc_auc": 0.9814033555177839,
+    "recall": 0.8469387755102041,
+    "precision": 0.8645833333333334,
+    "f1_score": 0.8556701030927835
+  },
+  "kpi_status": {
+    "roc_auc_pass": true,
+    "recall_pass": false,
+    "precision_pass": true
+  }
+}
