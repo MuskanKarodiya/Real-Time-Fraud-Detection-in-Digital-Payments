@@ -1,19 +1,20 @@
 """
 FastAPI Application - Fraud Detection API
 
-Key Concepts:
-1. @app.post() - Define POST endpoint
-2. async def - Asynchronous for concurrent requests
-3. Dependency Injection - Clean way to share resources
-4. Middleware - CORS, logging, etc.
+Features:
+- API Key Authentication
+- Rate Limiting
+- Request Logging
+- Enhanced Error Handling (RFC 7807)
 """
-from fastapi import FastAPI, HTTPException, status, Depends
+import time
+from contextlib import asynccontextmanager
+from datetime import datetime
+from typing import List, Optional
+
+from fastapi import FastAPI, Request, Depends, status, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from contextlib import asynccontextmanager
-import logging
-from datetime import datetime
-from typing import List
 
 from app.config import API_TITLE, API_VERSION, API_DESCRIPTION, ALLOWED_ORIGINS
 from app.schemas import (
@@ -25,38 +26,34 @@ from app.schemas import (
     ModelInfoResponse
 )
 from app.model import model_service
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+from app.auth import verify_api_key, verify_api_key_optional, get_client_info
+from app.logging_config import prediction_logger
+from app.rate_limit import prediction_rate_limit_checker
+from app.exceptions import (
+    APIException,
+    api_exception_handler,
+    http_exception_handler,
+    ValidationError,
+    ModelError
 )
-logger = logging.getLogger(__name__)
 
 
-# Lifespan context manager - runs on startup/shutdown
+# Lifespan context manager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Manage application lifespan.
-
-    Startup: Load model, verify health
-    Shutdown: Clean up resources
-    """
-    # Startup
-    logger.info("Starting Fraud Detection API...")
-    logger.info("Loading ML model...")
+    """Manage application startup/shutdown."""
+    print("Starting Fraud Detection API...")
+    print("Loading ML model...")
 
     if model_service.health_check():
-        logger.info("✓ Model loaded successfully")
-        logger.info(f"Model info: {model_service.get_model_info()}")
+        print("✓ Model loaded successfully")
+        print(f"Model: {model_service.get_model_info()}")
     else:
-        logger.error("✗ Model loading failed!")
+        print("✗ Model loading failed!")
 
-    yield  # Application runs here
+    yield
 
-    # Shutdown
-    logger.info("Shutting down Fraud Detection API...")
+    print("Shutting down Fraud Detection API...")
 
 
 # Create FastAPI app
@@ -65,13 +62,17 @@ app = FastAPI(
     version=API_VERSION,
     description=API_DESCRIPTION,
     lifespan=lifespan,
-    docs_url="/docs",  # Swagger UI
-    redoc_url="/redoc"  # ReDoc
+    docs_url="/docs",
+    redoc_url="/redoc"
 )
 
 
+# Exception handlers
+app.add_exception_handler(APIException, api_exception_handler)
+app.add_exception_handler(HTTPException, http_exception_handler)
+
+
 # CORS Middleware
-# Allows frontend apps to call this API
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
@@ -81,18 +82,36 @@ app.add_middleware(
 )
 
 
-# Root endpoint
+# Request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all API requests."""
+    start_time = time.time()
+
+    # Process request
+    response = await call_next(request)
+
+    # Calculate response time
+    process_time = (time.time() - start_time) * 1000
+
+    # Log to console
+    print(f"{request.method} {request.url.path} - Status: {response.status_code} - Time: {process_time:.2f}ms")
+
+    return response
+
+
+# ============================================================================
+# PUBLIC ENDPOINTS (No Authentication Required)
+# ============================================================================
+
 @app.get("/", tags=["Root"])
 async def root():
-    """
-    Root endpoint - API information.
-
-    Returns basic API info and available endpoints.
-    """
+    """Root endpoint - API information."""
     return {
         "message": "Fraud Detection API",
         "version": API_VERSION,
         "status": "running",
+        "authentication": "API Key required for protected endpoints",
         "endpoints": {
             "predict": "/api/v1/predict",
             "batch_predict": "/api/v1/predict/batch",
@@ -103,19 +122,9 @@ async def root():
     }
 
 
-# Health Check Endpoint
 @app.get("/api/v1/health", response_model=HealthResponse, tags=["Health"])
 async def health_check():
-    """
-    Health check endpoint.
-
-    Used by:
-    - Load balancers to check service health
-    - Monitoring systems
-    - Kubernetes probes
-
-    Returns service status and model loading state.
-    """
+    """Health check endpoint - no authentication required."""
     model_loaded = model_service.health_check()
 
     return HealthResponse(
@@ -126,19 +135,9 @@ async def health_check():
     )
 
 
-# Model Info Endpoint
 @app.get("/api/v1/model/info", response_model=ModelInfoResponse, tags=["Model"])
 async def get_model_info():
-    """
-    Get model information.
-
-    Returns:
-    - Model name and version
-    - Training date
-    - Feature count
-    - Performance metrics
-    - API version
-    """
+    """Get model information - no authentication required."""
     try:
         info = model_service.get_model_info()
         return ModelInfoResponse(
@@ -152,103 +151,92 @@ async def get_model_info():
             api_version=API_VERSION
         )
     except Exception as e:
-        logger.error(f"Error getting model info: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to retrieve model information"
-        )
+        raise ModelError(f"Failed to retrieve model information: {str(e)}")
 
 
-# Single Prediction Endpoint
+# ============================================================================
+# PROTECTED ENDPOINTS (API Key Authentication Required)
+# ============================================================================
+
 @app.post("/api/v1/predict", response_model=PredictionResponse, tags=["Prediction"])
-async def predict(request: PredictionRequest):
+async def predict(
+    request: PredictionRequest,
+    http_request: Request,
+    api_key: str = Depends(verify_api_key),
+    _rate_limit: None = Depends(prediction_rate_limit_checker)
+):
     """
     Predict fraud for a single transaction.
 
-    Request Body:
-    {
-        "transaction_id": "txn_123",
-        "amount": 150.50,
-        "features": [31 float values]
-    }
-
-    Response:
-    {
-        "transaction_id": "txn_123",
-        "fraud_probability": 0.234,
-        "prediction": 0,
-        "risk_level": "LOW",
-        "threshold_used": 0.5,
-        "processed_at": "2026-03-19T10:30:00Z"
-    }
-
-    HTTP Status Codes:
-    - 200: Successful prediction
-    - 422: Invalid request data
-    - 500: Prediction service error
+    Authentication: Required (X-API-Key header)
+    Rate Limit: 60 requests per minute
     """
+    start_time = time.time()
+
     try:
         # Make prediction
-        result = model_service.predict(
-            features=request.features,
-            threshold=request.threshold if hasattr(request, 'threshold') else None
-        )
+        result = model_service.predict(features=request.features)
 
         # Build response
-        return PredictionResponse(
+        response_data = {
+            "transaction_id": request.transaction_id,
+            "fraud_probability": result["fraud_probability"],
+            "prediction": result["prediction"],
+            "risk_level": result["risk_level"],
+            "threshold_used": result["threshold_used"],
+            "processed_at": datetime.utcnow().isoformat() + "Z"
+        }
+
+        # Log prediction
+        response_time = (time.time() - start_time) * 1000
+        prediction_logger.log_prediction(
             transaction_id=request.transaction_id,
-            fraud_probability=result["fraud_probability"],
-            prediction=result["prediction"],
-            risk_level=result["risk_level"],
-            threshold_used=result["threshold_used"],
-            processed_at=datetime.utcnow().isoformat() + "Z"
+            request=request.model_dump(),
+            response=response_data,
+            api_key=api_key,
+            response_time_ms=response_time
         )
+
+        return PredictionResponse(**response_data)
 
     except ValueError as e:
-        # Validation error
-        logger.warning(f"Validation error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(e)
+        # Log error
+        prediction_logger.log_error(
+            endpoint="/api/v1/predict",
+            error=e,
+            request_data=request.model_dump(),
+            api_key=api_key
         )
+        raise ValidationError(str(e))
 
     except Exception as e:
-        # Unexpected error
-        logger.error(f"Prediction error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Prediction failed: {str(e)}"
+        prediction_logger.log_error(
+            endpoint="/api/v1/predict",
+            error=e,
+            request_data=request.model_dump(),
+            api_key=api_key
         )
+        raise ModelError(f"Prediction failed: {str(e)}")
 
 
-# Batch Prediction Endpoint
 @app.post("/api/v1/predict/batch", response_model=BatchPredictionResponse, tags=["Prediction"])
-async def predict_batch(request: BatchPredictionRequest):
+async def predict_batch(
+    request: BatchPredictionRequest,
+    http_request: Request,
+    api_key: str = Depends(verify_api_key),
+    _rate_limit: None = Depends(prediction_rate_limit_checker)
+):
     """
     Predict fraud for multiple transactions.
 
-    More efficient than multiple single predictions.
-
-    Request Body:
-    {
-        "threshold": 0.5,
-        "transactions": [
-            {"transaction_id": "txn1", "amount": 100, "features": [...]},
-            {"transaction_id": "txn2", "amount": 200, "features": [...]}
-        ]
-    }
-
-    Response:
-    {
-        "predictions": [...],
-        "total_processed": 2,
-        "fraud_count": 0,
-        "fraud_rate": 0.0,
-        "processed_at": "2026-03-19T10:30:00Z"
-    }
+    Authentication: Required (X-API-Key header)
+    Rate Limit: 60 requests per minute
+    Max Batch Size: 100 transactions
     """
+    start_time = time.time()
+
     try:
-        # Extract features from all transactions
+        # Extract features and IDs
         features_list = [txn.features for txn in request.transactions]
         transaction_ids = [txn.transaction_id for txn in request.transactions]
 
@@ -262,7 +250,7 @@ async def predict_batch(request: BatchPredictionRequest):
         prediction_responses = []
         fraud_count = 0
 
-        for txn_id, pred in zip(transaction_ids, predictions):
+        for txn_id, pred, txn in zip(transaction_ids, predictions, request.transactions):
             fraud_count += pred["prediction"]
             prediction_responses.append(
                 PredictionResponse(
@@ -275,37 +263,62 @@ async def predict_batch(request: BatchPredictionRequest):
                 )
             )
 
-        return BatchPredictionResponse(
-            predictions=prediction_responses,
-            total_processed=len(prediction_responses),
-            fraud_count=fraud_count,
-            fraud_rate=round(fraud_count / len(prediction_responses), 4),
-            processed_at=datetime.utcnow().isoformat() + "Z"
+        response_data = {
+            "predictions": prediction_responses,
+            "total_processed": len(prediction_responses),
+            "fraud_count": fraud_count,
+            "fraud_rate": round(fraud_count / len(prediction_responses), 4),
+            "processed_at": datetime.utcnow().isoformat() + "Z"
+        }
+
+        # Log batch prediction
+        response_time = (time.time() - start_time) * 1000
+        prediction_logger.log_batch_prediction(
+            transactions=[t.model_dump() for t in request.transactions],
+            responses=[p.model_dump() for p in prediction_responses],
+            api_key=api_key,
+            response_time_ms=response_time
         )
+
+        return BatchPredictionResponse(**response_data)
 
     except ValueError as e:
-        logger.warning(f"Validation error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=str(e)
+        prediction_logger.log_error(
+            endpoint="/api/v1/predict/batch",
+            error=e,
+            api_key=api_key
         )
+        raise ValidationError(str(e))
 
     except Exception as e:
-        logger.error(f"Batch prediction error: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Batch prediction failed: {str(e)}"
+        prediction_logger.log_error(
+            endpoint="/api/v1/predict/batch",
+            error=e,
+            api_key=api_key
         )
+        raise ModelError(f"Batch prediction failed: {str(e)}")
 
 
-# Global exception handler
+# ============================================================================
+# ERROR HANDLERS
+# ============================================================================
+
 @app.exception_handler(Exception)
-async def global_exception_handler(request, exc):
+async def global_exception_handler(request: Request, exc: Exception):
     """Handle unexpected exceptions."""
-    logger.error(f"Unhandled exception: {exc}")
+    prediction_logger.log_error(
+        endpoint=str(request.url.path),
+        error=exc
+    )
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content={"detail": "Internal server error"}
+        content={
+            "type": "https://api.fraud-detection.com/errors/internal-error",
+            "title": "Internal Server Error",
+            "status": 500,
+            "detail": "An unexpected error occurred",
+            "instance": str(request.url.path)
+        }
     )
 
 
@@ -313,7 +326,7 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "app.main:app",
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=8000,
-        reload=True  # Auto-reload on code changes
+        reload=True
     )
