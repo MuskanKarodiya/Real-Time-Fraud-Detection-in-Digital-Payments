@@ -133,6 +133,7 @@ class BatchPredictionResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     """Response schema for health check."""
+    model_config = ConfigDict(protected_namespaces=())
     status: str = Field(..., description="Service status")
     model_loaded: bool = Field(..., description="Whether model is loaded")
     version: str = Field(..., description="API version")
@@ -141,6 +142,7 @@ class HealthResponse(BaseModel):
 
 class ModelInfoResponse(BaseModel):
     """Response schema for model information."""
+    model_config = ConfigDict(protected_namespaces=())
     model_name: str
     model_version: str
     algorithm: str
