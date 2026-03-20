@@ -7,7 +7,7 @@ FastAPI uses these to automatically:
 3. Generate API documentation
 4. Return helpful error messages
 """
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import List, Optional
 from datetime import datetime
 
@@ -48,8 +48,8 @@ class PredictionRequest(BaseModel):
             raise ValueError('transaction_id cannot be empty or whitespace')
         return v
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "transaction_id": "txn_123456",
                 "amount": 150.50,
@@ -61,6 +61,7 @@ class PredictionRequest(BaseModel):
                 ]
             }
         }
+    )
 
 
 class PredictionResponse(BaseModel):
@@ -91,8 +92,8 @@ class PredictionResponse(BaseModel):
         description="ISO timestamp of prediction"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "transaction_id": "txn_123456",
                 "fraud_probability": 0.234,
@@ -102,6 +103,7 @@ class PredictionResponse(BaseModel):
                 "processed_at": "2026-03-19T10:30:00Z"
             }
         }
+    )
 
 
 class BatchPredictionRequest(BaseModel):

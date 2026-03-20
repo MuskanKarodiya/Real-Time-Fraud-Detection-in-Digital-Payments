@@ -12,7 +12,7 @@ Features:
 import logging
 import json
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional
 import threading
@@ -87,7 +87,7 @@ class PredictionLogger:
             response_time_ms: Request processing time in milliseconds
         """
         log_entry = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "transaction_id": transaction_id,
             "api_key_prefix": api_key[:8] + "..." if len(api_key) > 8 else "***",
             "request": {
@@ -132,7 +132,7 @@ class PredictionLogger:
         fraud_count = sum(r.get("prediction", 0) for r in responses)
 
         log_entry = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "api_key_prefix": api_key[:8] + "..." if len(api_key) > 8 else "***",
             "batch_size": len(transactions),
             "fraud_count": fraud_count,
@@ -167,7 +167,7 @@ class PredictionLogger:
             api_key: Client API key (masked)
         """
         log_entry = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "endpoint": endpoint,
             "error_type": type(error).__name__,
             "error_message": str(error),

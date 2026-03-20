@@ -9,7 +9,7 @@ Features:
 """
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import FastAPI, Request, Depends, status, HTTPException
@@ -131,7 +131,7 @@ async def health_check():
         status="healthy" if model_loaded else "unhealthy",
         model_loaded=model_loaded,
         version=API_VERSION,
-        timestamp=datetime.utcnow().isoformat() + "Z"
+        timestamp=datetime.now(timezone.utc).isoformat()
     )
 
 
@@ -184,7 +184,7 @@ async def predict(
             "prediction": result["prediction"],
             "risk_level": result["risk_level"],
             "threshold_used": result["threshold_used"],
-            "processed_at": datetime.utcnow().isoformat() + "Z"
+            "processed_at": datetime.now(timezone.utc).isoformat()
         }
 
         # Log prediction
@@ -259,7 +259,7 @@ async def predict_batch(
                     prediction=pred["prediction"],
                     risk_level=pred["risk_level"],
                     threshold_used=pred["threshold_used"],
-                    processed_at=datetime.utcnow().isoformat() + "Z"
+                    processed_at=datetime.now(timezone.utc).isoformat()
                 )
             )
 
@@ -268,7 +268,7 @@ async def predict_batch(
             "total_processed": len(prediction_responses),
             "fraud_count": fraud_count,
             "fraud_rate": round(fraud_count / len(prediction_responses), 4),
-            "processed_at": datetime.utcnow().isoformat() + "Z"
+            "processed_at": datetime.now(timezone.utc).isoformat()
         }
 
         # Log batch prediction
