@@ -53,6 +53,5 @@ Example_Repos_To_Refer/
 *.pdf
 
 # Week 3+ files (not yet ready for commit)
-.github/
 docs/infrastructure.md
 src/monitoring.py
