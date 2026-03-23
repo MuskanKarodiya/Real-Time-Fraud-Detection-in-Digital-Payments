@@ -9,12 +9,11 @@ import uvicorn
 import sys
 
 if __name__ == "__main__":
-    # Use 127.0.0.1 for Windows compatibility (0.0.0.0 doesn't work on Windows)
-    HOST = "127.0.0.1"
     PORT = 8000
 
     if "--prod" in sys.argv:
-        # Production mode
+        # Production mode: use 0.0.0.0 for external access (EC2, Docker)
+        HOST = "0.0.0.0"
         uvicorn.run(
             "app.main:app",
             host=HOST,
@@ -23,7 +22,8 @@ if __name__ == "__main__":
             workers=4
         )
     else:
-        # Development mode with auto-reload
+        # Development mode: use 127.0.0.1 for Windows compatibility
+        HOST = "127.0.0.1"
         uvicorn.run(
             "app.main:app",
             host=HOST,
