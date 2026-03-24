@@ -9,6 +9,11 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, List, Any, Optional
 import streamlit as st
 import json
+import os
+from dotenv import load_dotenv
+
+# Load environment variables FIRST
+load_dotenv()
 
 from dashboard.config import (
     MODEL_METADATA,
@@ -24,7 +29,6 @@ except ImportError:
     DB_AVAILABLE = False
 
 # Database config from .env
-import os
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
     "port": int(os.getenv("DB_PORT", "5432")),
@@ -70,7 +74,7 @@ def check_db_connection() -> Dict[str, Any]:
         return {'connected': False, 'error': str(e)}
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=5)
 def load_predictions_dataframe(limit: Optional[int] = None) -> pd.DataFrame:
     """
     Load predictions from PostgreSQL database.
@@ -113,7 +117,7 @@ def load_predictions_dataframe(limit: Optional[int] = None) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=5)
 def get_stats() -> Dict[str, Any]:
     """
     Get summary statistics from predictions database.
@@ -185,7 +189,7 @@ def get_stats() -> Dict[str, Any]:
         }
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=5)
 def get_hourly_stats(hours: int = 24) -> Dict[str, Any]:
     """
     Get hourly transaction and fraud rate stats from database.
@@ -233,7 +237,7 @@ def get_hourly_stats(hours: int = 24) -> Dict[str, Any]:
         return {'labels': [], 'volumes': [], 'fraud_rates': []}
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=5)
 def get_response_times(limit: int = 100) -> List[float]:
     """
     Get recent response times from database.
@@ -269,7 +273,7 @@ def get_response_times(limit: int = 100) -> List[float]:
         return []
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=5)
 def get_high_risk_transactions(limit: int = 10) -> List[Dict[str, Any]]:
     """
     Get high-risk transactions from database.
@@ -340,7 +344,7 @@ def get_probability_distribution() -> Dict[str, Any]:
     }
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=5)
 def load_errors_log(limit: int = 20) -> List[Dict[str, Any]]:
     """
     Load errors from database.

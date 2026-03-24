@@ -4,6 +4,10 @@ Dashboard Configuration
 Design system constants matching the approved mockup.
 """
 import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # ═══════════════════════════════════════════════════════════════════════
 # COLORS (Light Theme)
@@ -686,7 +690,7 @@ def build_sidebar(current_page: str = "Overview") -> None:
             </div>
             <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 8px;">
                 <span style="font-size: 10px;">Auto Refresh</span>
-                <span style="font-size: 10px; color: #4A3C8C; background: white; border: 1px solid #E0E0E0; border-radius: 4px; padding: 2px 6px;">30s</span>
+                <span style="font-size: 10px; color: #4A3C8C; background: white; border: 1px solid #E0E0E0; border-radius: 4px; padding: 2px 6px;">5s</span>
             </div>
         </div>
         """, unsafe_allow_html=True)

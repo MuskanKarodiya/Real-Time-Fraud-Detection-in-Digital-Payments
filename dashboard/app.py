@@ -68,7 +68,7 @@ st.markdown(f"""
     <div style="font-size: 15px; font-weight: 700; color: #4A3C8C; flex: 1;">📊 Fraud Detection Dashboard</div>
     <div style="display: flex; align-items: center; gap: 12px;">
         <div style="font-size: 11px; color: #757575;">Last updated: {datetime.now().strftime('%H:%M:%S')}</div>
-        <div style="font-size: 11px; color: #4A3C8C; background: rgba(74,60,140,0.08); padding: 4px 10px; border-radius: 4px;">Auto-refresh 30s</div>
+        <div style="font-size: 11px; color: #4A3C8C; background: rgba(74,60,140,0.08); padding: 4px 10px; border-radius: 4px;">Auto-refresh 5s</div>
     </div>
 </div>
 """, unsafe_allow_html=True)

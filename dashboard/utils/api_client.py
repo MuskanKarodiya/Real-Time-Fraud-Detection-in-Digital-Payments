@@ -121,7 +121,7 @@ def make_prediction(transaction_id: str, amount: float, features: list, api_key:
         }
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=5)
 def get_api_metrics() -> Dict[str, Any]:
     """
     Get API metrics if available.
