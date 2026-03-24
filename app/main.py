@@ -36,6 +36,15 @@ from app.exceptions import (
     ValidationError,
     ModelError
 )
+from app.dashboard_data import (
+    get_stats,
+    get_hourly_stats,
+    get_response_times,
+    get_high_risk_transactions,
+    get_probability_distribution,
+    get_recent_predictions,
+    get_errors
+)
 
 
 # Lifespan context manager
@@ -152,6 +161,77 @@ async def get_model_info():
         )
     except Exception as e:
         raise ModelError(f"Failed to retrieve model information: {str(e)}")
+
+
+# ============================================================================
+# DASHBOARD DATA ENDPOINTS (No Authentication - Read-only)
+# ============================================================================
+
+@app.get("/api/v1/dashboard/stats", tags=["Dashboard"])
+async def dashboard_stats():
+    """Get summary statistics for the dashboard overview."""
+    return get_stats()
+
+
+@app.get("/api/v1/dashboard/hourly", tags=["Dashboard"])
+async def dashboard_hourly(hours: int = Query(24, ge=1, le=168)):
+    """
+    Get hourly transaction and fraud rate stats.
+
+    Args:
+        hours: Number of hours to look back (1-168, default 24)
+    """
+    return get_hourly_stats(hours=hours)
+
+
+@app.get("/api/v1/dashboard/response-times", tags=["Dashboard"])
+async def dashboard_response_times(limit: int = Query(100, ge=1, le=1000)):
+    """
+    Get recent response times for latency chart.
+
+    Args:
+        limit: Number of response times to return (1-1000, default 100)
+    """
+    return get_response_times(limit=limit)
+
+
+@app.get("/api/v1/dashboard/high-risk", tags=["Dashboard"])
+async def dashboard_high_risk(limit: int = Query(10, ge=1, le=100)):
+    """
+    Get high-risk transactions for the overview page.
+
+    Args:
+        limit: Number of transactions to return (1-100, default 10)
+    """
+    return get_high_risk_transactions(limit=limit)
+
+
+@app.get("/api/v1/dashboard/probability-distribution", tags=["Dashboard"])
+async def dashboard_probability_distribution():
+    """Get fraud probability distribution for histogram."""
+    return get_probability_distribution()
+
+
+@app.get("/api/v1/dashboard/predictions/recent", tags=["Dashboard"])
+async def dashboard_recent_predictions(limit: int = Query(50, ge=1, le=500)):
+    """
+    Get recent predictions for the transactions page.
+
+    Args:
+        limit: Number of predictions to return (1-500, default 50)
+    """
+    return get_recent_predictions(limit=limit)
+
+
+@app.get("/api/v1/dashboard/errors", tags=["Dashboard"])
+async def dashboard_errors(limit: int = Query(20, ge=1, le=100)):
+    """
+    Get recent errors for the API Health page.
+
+    Args:
+        limit: Number of errors to return (1-100, default 20)
+    """
+    return get_errors(limit=limit)
 
 
 # ============================================================================

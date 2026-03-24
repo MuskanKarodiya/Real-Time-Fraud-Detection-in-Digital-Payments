@@ -3,7 +3,12 @@ Application Configuration
 
 Central place for all settings - model paths, thresholds, etc.
 """
+import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Base directory
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -51,3 +56,22 @@ ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:8501",  # Streamlit default
 ]
+
+# Database Configuration for Logging
+DB_CONFIG = {
+    "host": os.getenv("DB_HOST", "localhost"),
+    "port": int(os.getenv("DB_PORT", 5432)),
+    "database": os.getenv("DB_NAME", "fraud_detection"),
+    "user": os.getenv("DB_USER", "postgres"),
+    "password": os.getenv("DB_PASSWORD", ""),
+}
+
+# Database connection URL for SQLAlchemy
+# Format: postgresql+psycopg2://user:password@host:port/database
+DATABASE_URL = (
+    f"postgresql+psycopg2://{DB_CONFIG['user']}:{DB_CONFIG['password']}"
+    f"@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
+)
+
+# Logging Configuration
+ENABLE_DB_LOGGING = os.getenv("ENABLE_DB_LOGGING", "true").lower() == "true"

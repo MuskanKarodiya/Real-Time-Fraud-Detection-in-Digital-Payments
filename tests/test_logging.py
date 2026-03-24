@@ -208,3 +208,11 @@ class TestGlobalLogger:
         """Test that global logger is initialized."""
         assert prediction_logger is not None
         assert isinstance(prediction_logger, PredictionLogger)
+
+    def test_health_check_returns_dict(self):
+        """Test that health_check returns a dictionary with expected keys."""
+        health = prediction_logger.health_check()
+        assert isinstance(health, dict)
+        assert "file_logging" in health
+        assert "db_logging" in health
+        assert "db_connected" in health
