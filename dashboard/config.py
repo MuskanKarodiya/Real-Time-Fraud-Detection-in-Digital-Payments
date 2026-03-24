@@ -3,6 +3,7 @@ Dashboard Configuration
 
 Design system constants matching the approved mockup.
 """
+import os
 
 # ═══════════════════════════════════════════════════════════════════════
 # COLORS (Light Theme)
@@ -89,7 +90,7 @@ MODEL_METADATA = BASE_DIR / "models" / "metadata.json"
 # API CONFIG
 # ═══════════════════════════════════════════════════════════════════════
 
-API_BASE_URL = "http://13.61.71.115:8000"
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
 API_TIMEOUT = 10  # seconds
 
 # ═══════════════════════════════════════════════════════════════════════

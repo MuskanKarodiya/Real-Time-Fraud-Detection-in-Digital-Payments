@@ -26,11 +26,11 @@ except ImportError:
 # Database config from .env
 import os
 DB_CONFIG = {
-    "host": os.getenv("DB_HOST", "13.61.71.115"),
-    "port": int(os.getenv("DB_PORT", 5432)),
+    "host": os.getenv("DB_HOST", "localhost"),
+    "port": int(os.getenv("DB_PORT", "5432")),
     "database": os.getenv("DB_NAME", "fraud_detection"),
     "user": os.getenv("DB_USER", "postgres"),
-    "password": os.getenv("DB_PASSWORD", "fraud_pass_2025"),
+    "password": os.getenv("DB_PASSWORD", ""),
 }
 
 

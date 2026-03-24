@@ -56,7 +56,7 @@ def display_prediction_result(result):
         <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; padding: 12px; margin-top: 12px;">
             <div style="font-size: 12px; font-weight: 600; color: #856404; margin-bottom: 6px;">💡 Troubleshooting Tips:</div>
             <ul style="font-size: 11px; color: #856404; margin: 0; padding-left: 16px;">
-                <li>Check if the API server is running at <code>http://13.61.71.115:8000</code></li>
+                <li>Check if the API server is running at <code>{API_BASE_URL}</code></li>
                 <li>Try the example transactions above - they use real dataset values</li>
                 <li>Check your internet connection</li>
             </ul>

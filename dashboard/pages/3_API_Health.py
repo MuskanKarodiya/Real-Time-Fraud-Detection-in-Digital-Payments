@@ -38,7 +38,7 @@ with col1:
     <div style="display: flex; align-items: center; margin-bottom: 16px; margin-top: 25px;">
         <div>
             <div style="font-size: 20px; font-weight: 700; color: #333333;">⚕️ API Health Monitoring</div>
-            <div style="font-size: 11px; color: #757575; margin-top: 2px;">EC2 instance · 13.61.71.115:8000 · Live checks</div>
+            <div style="font-size: 11px; color: #757575; margin-top: 2px;">EC2 instance · {API_BASE_URL} · Live checks</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
