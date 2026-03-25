@@ -38,7 +38,7 @@ with col1:
     <div style="display: flex; align-items: center; margin-bottom: 16px; margin-top: 25px;">
         <div>
             <div style="font-size: 20px; font-weight: 700; color: #333333;">⚕️ API Health Monitoring</div>
-            <div style="font-size: 11px; color: #757575; margin-top: 2px;">EC2 instance · {API_BASE_URL} · Live checks</div>
+            <div style="font-size: 11px; color: #757575; margin-top: 2px;">EC2 instance · Live API health checks</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -121,17 +121,11 @@ with col3:
 response_times = get_response_times(limit=100)
 
 if response_times:
-    # Single card with header and chart inside
-    st.markdown("""
-    <div style="background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-            <div style="font-size: 13px; font-weight: 600; color: #333333;">📊 Response Time — Last 100 Requests</div>
-            <div style="font-size: 11px; color: #757575;">Horizontal line at 200ms SLA threshold</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    fig = create_response_time_chart(response_times)
-    st.plotly_chart(fig, use_container_width=False, width=700, config={'displayModeBar': False})
+    with st.container(border=True):
+        st.markdown("**📊 Response Time — Last 100 Requests**")
+        st.caption("Horizontal line at 200ms SLA threshold")
+        fig = create_response_time_chart(response_times)
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 else:
     st.markdown("""
     <div style="background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px;">
@@ -154,17 +148,11 @@ else:
 hourly_data = get_hourly_stats(hours=24)
 
 if hourly_data['volumes']:
-    # Single card with header and chart inside
-    st.markdown("""
-    <div style="background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-            <div style="font-size: 13px; font-weight: 600; color: #333333;">📊 Request Volume — Last 24 Hours</div>
-            <div style="font-size: 11px; color: #757575;">Requests per hour from prediction logs</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    fig = create_volume_chart(hourly_data)
-    st.plotly_chart(fig, use_container_width=False, width=700, config={'displayModeBar': False})
+    with st.container(border=True):
+        st.markdown("**📊 Request Volume — Last 24 Hours**")
+        st.caption("Requests per hour from prediction logs")
+        fig = create_volume_chart(hourly_data)
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 else:
     st.markdown("""
     <div style="background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px;">

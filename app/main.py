@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from fastapi import FastAPI, Request, Depends, status, HTTPException
+from fastapi import FastAPI, Request, Depends, status, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -274,7 +274,8 @@ async def predict(
             request=request.model_dump(),
             response=response_data,
             api_key=api_key,
-            response_time_ms=response_time
+            response_time_ms=response_time,
+            features=request.features  # Pass features for drift monitoring
         )
 
         return PredictionResponse(**response_data)

@@ -513,6 +513,7 @@ NAV_ITEMS = [
     {"page": "dashboard/pages/2_Model_Performance.py", "icon": "📊", "label": "Model Performance"},
     {"page": "dashboard/pages/3_Transactions.py", "icon": "🔍", "label": "Transactions"},
     {"page": "dashboard/pages/4_API_Health.py", "icon": "⚕️", "label": "API Health"},
+    {"page": "dashboard/pages/4_Drift_Monitor.py", "icon": "📊", "label": "Drift Monitor"},
 ]
 
 
@@ -615,7 +616,7 @@ def build_sidebar(current_page: str = "Overview") -> None:
     Build the branded sidebar with navigation and API endpoint config.
 
     Args:
-        current_page: The name of the current page for highlighting (Overview, Model Performance, Transactions, API Health)
+        current_page: The name of the current page for highlighting (Overview, Model Performance, Transactions, API Health, Drift Monitor)
     """
     import streamlit as st
 
@@ -677,6 +678,16 @@ def build_sidebar(current_page: str = "Overview") -> None:
             """, unsafe_allow_html=True)
         else:
             st.page_link("pages/3_API_Health.py", label="API Health", icon="⚕️")
+
+        # Drift Monitor
+        if current_page == "Drift Monitor":
+            st.markdown("""
+            <div style="padding: 8px 12px; margin-left: 8px; background: #f0f4ff; border-left: 3px solid #4A3C8C; border-radius: 4px; margin-bottom: 4px;">
+                <span style="font-size: 13px; font-weight: 600; color: #4A3C8C;">📊 Drift Monitor</span>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.page_link("pages/4_Drift_Monitor.py", label="Drift Monitor", icon="📊")
 
         # Spacer to push config to bottom
         st.markdown("<div style='flex: 1;'></div>", unsafe_allow_html=True)

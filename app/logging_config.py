@@ -36,7 +36,7 @@ try:
     DB_AVAILABLE = True
 except ImportError:
     DB_AVAILABLE = False
-    ENABLE_DB_LOGGING = False
+    ENABLE_DB_LOGGING = True
 
 
 logger = logging.getLogger("api")
@@ -117,6 +117,63 @@ class PredictionLogger:
             handler.setFormatter(formatter)
             logger.addHandler(handler)
 
+    def _log_features_for_drift(
+        self,
+        transaction_id: str,
+        features: list
+    ) -> bool:
+        """
+        Log input features to prediction_inputs table for drift monitoring.
+
+        This is independent from predictions_log - if this fails, main logging continues.
+
+        Args:
+            transaction_id: Transaction identifier
+            features: List of 28 feature values (V1-V28)
+
+        Returns:
+            bool: True if successful
+        """
+        if not DB_AVAILABLE:
+            return False
+
+        try:
+            import psycopg2
+
+            conn = psycopg2.connect(
+                host=DB_CONFIG["host"],
+                port=DB_CONFIG["port"],
+                database=DB_CONFIG["database"],
+                user=DB_CONFIG["user"],
+                password=DB_CONFIG["password"],
+                connect_timeout=5
+            )
+            cursor = conn.cursor()
+
+            # Build column names and placeholders
+            columns = ["transaction_id"] + [f"v{i}" for i in range(1, 29)]
+            placeholders = ["%s"] * 29
+            sql = f"""
+                INSERT INTO prediction_inputs
+                ({', '.join(columns)})
+                VALUES ({', '.join(placeholders)})
+            """
+
+            params = [str(transaction_id)[:50]] + [float(f) for f in features[:28]]
+            # Pad with zeros if fewer than 28 features
+            params.extend([0.0] * (28 - len(features[:28])))
+
+            cursor.execute(sql, params)
+            conn.commit()
+            cursor.close()
+            conn.close()
+            return True
+
+        except Exception as e:
+            # Don't fail the main prediction if drift logging fails
+            logger.debug(f"Feature drift logging failed (non-critical): {type(e).__name__}: {e}")
+            return False
+
     def _log_to_database(
         self,
         table_name: str,
@@ -130,8 +187,8 @@ class PredictionLogger:
         if not DB_AVAILABLE:
             return False
 
-        if table_name != 'predictions_log':
-            return False  # Only logging predictions for now
+        if table_name not in ('predictions_log', 'error_logs'):
+            return False
 
         try:
             import psycopg2
@@ -196,7 +253,8 @@ class PredictionLogger:
         request: Dict[str, Any],
         response: Dict[str, Any],
         api_key: str,
-        response_time_ms: float
+        response_time_ms: float,
+        features: Optional[list] = None
     ) -> None:
         """
         Log a prediction request and response.
@@ -209,6 +267,7 @@ class PredictionLogger:
             response: Prediction result (probability, prediction, etc.)
             api_key: Client API key (masked)
             response_time_ms: Request processing time in milliseconds
+            features: Optional list of feature values (V1-V28) for drift monitoring
         """
         # Prepare log data - matches existing EC2 schema
         db_data = {
@@ -247,6 +306,10 @@ class PredictionLogger:
             # Also log to database if enabled and available
             if ENABLE_DB_LOGGING and DB_AVAILABLE:
                 self._log_to_database('predictions_log', db_data)
+
+            # Log input features for drift monitoring (independent, non-critical)
+            if features is not None and ENABLE_DB_LOGGING and DB_AVAILABLE:
+                self._log_features_for_drift(transaction_id, features)
 
     def log_batch_prediction(
         self,

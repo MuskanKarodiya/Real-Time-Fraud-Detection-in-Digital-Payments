@@ -93,7 +93,7 @@ st.markdown("""
 # ═══════════════════════════════════════════════════════════════════════
 
 stats = get_stats()
-hourly_data = get_hourly_stats(hours=24)
+hourly_data = get_hourly_stats(hours=48)
 high_risk = get_high_risk_transactions(limit=10)
 health = check_health()
 
@@ -202,22 +202,16 @@ num_data_points = len(hourly_data.get('volumes', []))
 
 # Only show chart if we have 6+ data points, otherwise show empty state
 if num_data_points >= 6:
-    # Single card with header and chart inside
-    st.markdown("""
-    <div style="background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-            <div style="font-size: 13px; font-weight: 600; color: #333333;">📈 Fraud Rate Trend — Last 24 Hours</div>
-            <div style="font-size: 11px; color: #757575;">Transaction Volume (bars) + Fraud Rate (line)</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    fig = create_fraud_rate_trend(hourly_data)
-    st.plotly_chart(fig, use_container_width=False, width=700, config={'displayModeBar': False})
+    with st.container(border=True):
+        st.markdown("**📈 Fraud Rate Trend — Last 48 Hours**")
+        st.caption("Transaction Volume (bars) + Fraud Rate (line)")
+        fig = create_fraud_rate_trend(hourly_data)
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 else:
     st.markdown("""
     <div style="background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px;">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-            <div style="font-size: 13px; font-weight: 600; color: #333333;">📈 Fraud Rate Trend — Last 24 Hours</div>
+            <div style="font-size: 13px; font-weight: 600; color: #333333;">📈 Fraud Rate Trend — Last 48 Hours</div>
             <div style="font-size: 11px; color: #757575;">Transaction Volume (bars) + Fraud Rate (line)</div>
         </div>
         <div style="text-align: center; padding: 40px 20px; color: #757575;">
