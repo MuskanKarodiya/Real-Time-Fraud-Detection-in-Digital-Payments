@@ -58,3 +58,16 @@ src/monitoring.py
 
 # Production requirements (not committed)
 requirements-prod.txt
+
+# SSH keys (sensitive!)
+*.pem
+fraud-detection-key.pem
+
+# Local test files
+test_prediction.py
+
+# Local documentation
+SYSTEM_STATUS.md
+project_guide.md
+DECISIONS.md
+LEARNING_ROADMAP.md
