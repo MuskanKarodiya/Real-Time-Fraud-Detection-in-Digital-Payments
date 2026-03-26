@@ -418,3 +418,140 @@ def load_model_metadata() -> Dict[str, Any]:
         return json.loads(MODEL_METADATA.read_text())
     except (json.JSONDecodeError, Exception):
         return {}
+
+
+@st.cache_data(ttl=30)
+def get_alerts(limit: int = 10) -> List[Dict[str, Any]]:
+    """
+    Get recent alerts from database.
+
+    Args:
+        limit: Maximum number of alerts to return (default: 10)
+
+    Returns:
+        List of alert dictionaries
+    """
+    try:
+        conn = get_db_connection()
+
+        # Check if alerts_log table exists
+        check_query = """
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_schema = 'public'
+                AND table_name = 'alerts_log'
+            )
+        """
+
+        cur = conn.cursor()
+        cur.execute(check_query)
+        table_exists = cur.fetchone()[0]
+
+        if not table_exists:
+            cur.close()
+            conn.close()
+            return []
+
+        query = """
+            SELECT
+                id,
+                alert_type,
+                severity,
+                title,
+                message,
+                details,
+                email_sent,
+                created_at as timestamp
+            FROM alerts_log
+            ORDER BY created_at DESC
+            LIMIT %s
+        """
+
+        cur.execute(query, (limit,))
+        columns = [desc[0] for desc in cur.description]
+        alerts = []
+        for row in cur.fetchall():
+            alert = dict(zip(columns, row))
+            # Parse JSON details if present
+            if alert.get('details'):
+                try:
+                    alert['details'] = json.loads(alert['details'])
+                except:
+                    pass
+            alerts.append(alert)
+
+        cur.close()
+        conn.close()
+
+        return alerts
+
+    except Exception as e:
+        st.error(f"Database connection error: {e}")
+        return []
+
+
+@st.cache_data(ttl=60)
+def get_alert_summary() -> Dict[str, Any]:
+    """
+    Get alert summary statistics.
+
+    Returns:
+        Dictionary with alert summary (total, by severity, by type)
+    """
+    try:
+        conn = get_db_connection()
+
+        # Check if alerts_log table exists
+        check_query = """
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_schema = 'public'
+                AND table_name = 'alerts_log'
+            )
+        """
+
+        cur = conn.cursor()
+        cur.execute(check_query)
+        table_exists = cur.fetchone()[0]
+
+        if not table_exists:
+            cur.close()
+            conn.close()
+            return {
+                'total': 0,
+                'by_severity': {'critical': 0, 'warning': 0, 'info': 0},
+                'last_24h': []
+            }
+
+        # Get total and by severity (last 7 days)
+        summary_query = """
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN severity = 'critical' THEN 1 ELSE 0 END) as critical,
+                SUM(CASE WHEN severity = 'warning' THEN 1 ELSE 0 END) as warning,
+                SUM(CASE WHEN severity = 'info' THEN 1 ELSE 0 END) as info
+            FROM alerts_log
+            WHERE created_at > NOW() - INTERVAL '7 days'
+        """
+
+        cur.execute(summary_query)
+        row = cur.fetchone()
+
+        cur.close()
+        conn.close()
+
+        return {
+            'total': row[0] if row else 0,
+            'by_severity': {
+                'critical': row[1] if row else 0,
+                'warning': row[2] if row else 0,
+                'info': row[3] if row else 0
+            }
+        }
+
+    except Exception as e:
+        return {
+            'total': 0,
+            'by_severity': {'critical': 0, 'warning': 0, 'info': 0},
+            'last_24h': []
+        }
