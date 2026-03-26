@@ -230,6 +230,35 @@ streamlit run dashboard/app.py
 - Email notifications via Gmail SMTP
 - Database: PostgreSQL on EC2
 
+## 🔄 Automated Retraining Pipeline
+
+**Status:** Implemented but not actively used (see note below)
+
+An automated retraining pipeline (`src/retraining.py`) was implemented per project requirements with the following capabilities:
+
+| Component | Description |
+|-----------|-------------|
+| **Triggers** | Drift detected, scheduled monthly, or manual override |
+| **Data Source** | transactions_training table (features + labels) |
+| **Validation** | New model must meet/exceed baseline metrics |
+| **Promotion** | If validated, model version is incremented |
+| **Notification** | Email sent with metrics comparison |
+
+**Note on Retraining in This Project:**
+
+This project uses a static Kaggle dataset for training. In a real production system:
+
+- Live predictions → Fraud investigation → Labeled data → Added to training set → Model improves
+
+In this project:
+
+- `predictions_log` has no labels (no ground truth for live predictions)
+- `transactions_raw` is static Kaggle data (never changes)
+- Automated retraining would retrain on the same data without new information
+- The production model (`fraud_detector_v1.pkl`) was trained on the full 284,807 rows
+
+Therefore, the retraining pipeline exists to **demonstrate the implementation** per project requirements, but is not scheduled for automated execution. The v1 model remains the production model for all live predictions.
+
 ---
 
 > 📝 *This README describes the deployed system and how to use it.*
