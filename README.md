@@ -179,7 +179,9 @@ Notebooks in `notebooks/` document the model selection process:
 
 ## 🚀 Live API
 
-**Endpoint:** `http://13.61.71.115:8000/api/v1/predict` (AWS EC2)
+**AWS EC2 Endpoint:** `http://13.61.71.115:8000/api/v1/predict`
+
+**Hugging Face Spaces (Public):** https://huggingface.co/spaces/muskankarodiya/fraud-detection-spaces
 
 **Example Request:**
 ```bash
