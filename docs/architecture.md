@@ -1,14 +1,21 @@
 # System Architecture
 
+**FraudLens - Real-Time Fraud Detection in Digital Payments**
+
+*Production-Grade ML System - End-to-end: Data Engineering | ML Modeling | Cloud Deployment | Production Monitoring*
+
+---
+
 ## Table of Contents
+
 1. [High-Level System View](#high-level-system-view)
-2. [Detailed Component Architecture](#detailed-component-architecture)
+2. [Component Architecture](#component-architecture)
 3. [Data Flow Architecture](#data-flow-architecture)
 4. [API Architecture](#api-architecture)
 5. [Database Schema](#database-schema)
-6. [Deployment Architecture](#deployment-architecture)
-7. [CI/CD Pipeline](#ci-cd-pipeline)
-8. [Monitoring & Observability](#monitoring--observability)
+6. [Dashboard Architecture](#dashboard-architecture)
+7. [Monitoring & Observability](#monitoring--observability)
+8. [Retraining Pipeline](#retraining-pipeline)
 
 ---
 
@@ -22,10 +29,10 @@
 ┌────────────────── EXTERNAL ──────────────────┐    ┌────────────────── INTERNAL ──────────────────┐
 │                                              │    │                                                │
 │  ┌────────────┐    ┌────────────┐           │    │    ┌──────────────────────────────────────┐   │
-│  │   Kaggle   │    │ Transaction│           │    │    │       MODEL TRAINING PIPELINE       │   │
-│  │   Dataset  │    │   Stream   │           │    │    │  ┌─────────┐  ┌──────────────────┐   │   │
-│  │            │    │  (future)  │           │    │    │  │ Optuna  │──▶ Hyperparameter   │   │   │
-│  └─────┬──────┘    └─────┬──────┘           │    │    │  │  Tuning │   Search (100 trials)│   │   │
+│  │   Kaggle   │    │ Dashboard  │           │    │    │         MONITORING LAYER           │   │
+│  │   Dataset  │    │(Streamlit) │           │    │    │  ┌─────────┐  ┌──────────────────┐   │   │
+│  │            │    │  Local:8501│           │    │    │  │ PSI/KS  │──▶ Drift Detection  │   │   │
+│  └─────┬──────┘    └─────┬──────┘           │    │    │  │ Tests  │   │ (28 features)     │   │   │
 │        │                 │                   │    │    │  └─────────┘  └────────┬─────────┘   │   │
 └────────┼─────────────────┼───────────────────┘    └────┼────────────────────────┼─────────────┘
          │                 │                             │                        │
@@ -37,11 +44,10 @@
 │  ┌─────────────────────────────────────────────────────────────────────────────────────────┐    │
 │  │                           SCHEDULER (Cron)                                              │    │
 │  │   ┌──────────────────────────────────────────────────────────────────────────────┐    │    │
-│  │   │  Schedule: 0 2 * * *  (Daily at 02:00 UTC)                                   │    │    │
-│  │   │  ┌────────────┐   ┌────────────┐   ┌────────────┐   ┌──────────────────┐   │    │    │
-│  │   │  │   ingest   │──▶│  validate  │──▶│ transform  │──▶│  quality_checks  │   │    │    │
-│  │   │  │   data     │   │   schema   │   │  features  │   │   & load to DB   │   │    │    │
-│  │   │  └────────────┘   └────────────┘   └────────────┘   └──────────────────┘   │    │    │
+│  │   │  ETL Pipeline (data_ingestion.py)                                                │    │    │
+│  │   │  • Chunked processing (5000 rows/chunk)                                           │    │    │
+│  │   │  • Memory-efficient for t3.medium (4GB RAM)                                      │    │    │
+│  │   │  • Cron: Daily at 02:00 UTC                                                          │    │    │
 │  │   └──────────────────────────────────────────────────────────────────────────────┘    │    │
 │  └─────────────────────────────────────────────────────────────────────────────────────────┘    │
 │                                     │                                                         │
@@ -49,20 +55,22 @@
                                       │
                                       ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                               DATA WAREHOUSE (PostgreSQL)                                       │
+│                               DATA WAREHOUSE (PostgreSQL 16.13)                                 │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
+│  Host: localhost (EC2) | Port: 5432 | Database: fraud_detection                            │
 │                                                                                                  │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────────────────────────────┐ │
 │  │ transactions_raw │  │transactions_features│ │              predictions_log                │ │
-│  │                  │  │                    │  │                                              │ │
-│  │ • id (PK)        │  │ • id (PK)          │  │ • id (PK)                                   │ │
-│  │ • time_elapsed   │  │ • transaction_id   │  │ • transaction_id                            │ │
-│  │ • v1-v28         │  │ • amount_scaled    │  │ • prediction                                │ │
-│  │ • amount         │  │ • hour_of_day      │  │ • confidence                                │ │
-│  │ • class          │  │ • is_night         │  │ • model_version                             │ │
-│  │ • ingested_at    │  │ • created_at       │  │ • predicted_at                              │ │
-│  └──────────────────┘  └──────────────────┘  │ • latency_ms                                │ │
-                                                  └──────────────────────────────────────────────┘ │
+│  │   (284,807)     │  │   (engineered)    │  │              (API predictions)            │ │
+│  └──────────────────┘  └──────────────────┘  └──────────────────────────────────────────────┘ │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────────────────────────────┐ │
+│  │transactions_trn  │  │prediction_inputs│  │               alerts_log                 │ │
+│  │(features+labels)│  │  (V1-V28 drift) │  │          (email alerts history)          │ │
+│  └──────────────────┘  └──────────────────┘  └──────────────────────────────────────────────┘ │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────────────────────────────────┐ │
+│  │  retraining_log │  │   error_logs    │  │            pipeline_audit               │ │
+│  │(retrain history)│  │  (API errors)    │  │        (ETL run history)              │ │
+│  └──────────────────┘  └──────────────────┘  └──────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
                                       │
                     ┌─────────────────┼─────────────────┐
@@ -70,252 +78,286 @@
                     ▼                 ▼                 ▼
          ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
          │   FastAPI       │  │   Streamlit     │  │   Monitoring    │
-         │   Service       │  │   Dashboard     │  │   Service       │
-         │                 │  │                 │  │                 │
-         │ Port: 8000      │  │ Port: 8501      │  │ Background Jobs │
+         │   Service       │  │   Dashboard     │  │   (Cron Jobs)   │
+         │   Port: 8000     │  │   Port: 8501     │  │                 │
+         │   Dockerized     │  │   Local only    │  │  alerting.py    │
          └─────────────────┘  └─────────────────┘  └─────────────────┘
 ```
 
 ---
 
-## Detailed Component Architecture
+## Component Architecture
 
-### 1. Data Ingestion Component
+### 1. Data Ingestion Module (`src/data_ingestion.py`)
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                           DATA INGESTION MODULE                                     │
-├─────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                     │
-│  INPUT                              PROCESSING                    OUTPUT            │
-│  ──────────────────────────────────────────────────────────────────────────────    │
-│                                                                                     │
-│  ┌──────────────┐    ┌───────────────────────────────────────────┐    ┌─────────┐ │
-│  │ creditcard.  │───▶│  1. SCHEMA VALIDATION                     │───▶│ Valid   │ │
-│  │    csv       │    │     - Check column count (31)             │    │ Rows    │ │
-│  │              │    │     - Verify column names                 │    │         │ │
-│  │  284,807     │    │     - Type enforcement (FLOAT, INT)        │    │         │ │
-│  │  rows        │    │     - Null detection                      │    │         │ │
-│  └──────────────┘    │                                           │    └─────────┘ │
-│                      │  2. DATA QUALITY CHECKS                   │                │
-│                      │     - Row count validation                 │    ┌─────────┐ │
-│                      │     - Distribution analysis               │───▶│ Invalid │ │
-│                      │     - Outlier detection (IQR method)       │    │ Rows    │ │
-│                      │                                           │    └─────────┘ │
-│                      │  3. CLASS BALANCE CHECK                   │                │
-│                      │     - Fraud ratio: ~0.172%                 │                │
-│                      │     - Expected: 492 fraud cases            │                │
-│                      └───────────────────────────────────────────┘                │
-│                                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+**Purpose:** ETL pipeline for loading Kaggle dataset into PostgreSQL
+
+**Key Features:**
+- Chunked processing (5,000 rows per chunk) for memory efficiency
+- Schema validation (31 columns: Time, V1-V28, Amount, Class)
+- Data quality metrics (row count, fraud rate, missing values)
+- Batch inserts (500 rows per database call)
+- Pipeline audit logging
+
+**Configuration:**
+```python
+CHUNK_SIZE = 5000      # Process 5,000 rows at a time
+INSERT_BATCH_SIZE = 500  # Insert 500 rows per DB call
 ```
 
-### 2. Feature Engineering Component
-
+**Data Flow:**
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                         FEATURE ENGINEERING MODULE                                  │
-├─────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                     │
-│  RAW FEATURES                         TRANSFORMATIONS                 ENGINEERED    │
-│  ──────────────────────────────────────────────────────────────────────────────    │
-│                                                                                     │
-│  ┌──────────────────┐         ┌──────────────────────────┐       ┌──────────────┐ │
-│  │ Time (seconds)   │────────▶│ 1. Cyclic Encoding       │──────▶│ hour_of_day  │ │
-│  │ from first txn   │         │    hour = (Time/3600) % 24│       │ (0-23)      │ │
-│  └──────────────────┘         │    sin/cos for cyclic    │       └──────────────┘ │
-│                               └──────────────────────────┘                        │
-│                                                                            ┌──────────────┐│
-│                               ┌──────────────────────────┐                │ is_night     ││
-│                               │ 2. Night Flag            │                │ (00:00-05:00)││
-│                               │    is_night = hour in [0-5]│──────────────▶│ Boolean      ││
-│                               └──────────────────────────┘                └──────────────┘│
-│                                                                                     │
-│  ┌──────────────────┐         ┌──────────────────────────┐       ┌──────────────┐ │
-│  │ Amount (USD)     │────────▶│ 1. StandardScaler        │──────▶│ amount_scaled│ │
-│  │ Raw value        │         │    mean=0, std=1          │       │ Float        │ │
-│  └──────────────────┘         │ 2. Z-score vs historical  │       └──────────────┘ │
-│                               └──────────────────────────┘                        │
-│                                                                            ┌──────────────┐│
-│                               ┌──────────────────────────┐                │ amount_zscore││
-│                               │ 3. Amount Deviation      │                │ Float        ││
-│                               │    vs cardholder mean    │───────────────▶│              ││
-│                               └──────────────────────────┘                └──────────────┘│
-│                                                                                     │
-│  ┌──────────────────┐                                                            │
-│  │ V1 - V28         │  PCA TRANSFORMED (Already anonymized)                       │
-│  │ Float values     │  → Correlation analysis (|r| > 0.95 remove if needed)       │
-│  └──────────────────┘  → All features retained (pre-processed)                    │
-│                                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+creditcard.csv → validate_schema() → process_and_load_chunk() → transactions_raw
+                   (31 columns)        (type conversion,     (284,807 rows)
+                                         rounding)
 ```
 
-### 3. Model Training Component
+---
 
+### 2. Feature Engineering Module (`src/feature_engineering.py`)
+
+**Purpose:** Transform raw features into model-ready inputs
+
+**Functions:**
+
+| Function | Input | Output |
+|----------|-------|--------|
+| `extract_time_features()` | `time_elapsed` | `hour`, `day`, `is_night` |
+| `add_cyclic_encoding()` | `hour` | `hour_sin`, `hour_cos` |
+| `scale_amount()` | `amount` | `amount_scaled` (StandardScaler) |
+| `remove_correlated_features()` | features list | filtered features (|r| > 0.95) |
+| `engineer_features()` | raw DataFrame | engineered DataFrame + scaler |
+
+**Engineered Features:**
+- **Time-based**: `hour` (0-23), `is_night` (0-5am flag), `hour_sin/cos` (cyclic)
+- **Amount**: `amount_scaled` (StandardScaler: mean=0, std=1)
+- **PCA Features**: V1-V28 (already transformed, correlation analysis applied)
+
+---
+
+### 3. Model Training Module (`src/model_training.py`)
+
+**Class:** `ModelTrainer`
+
+**Models Supported:**
+1. **Logistic Regression** (baseline)
+2. **Random Forest** (baseline)
+3. **XGBoost** (primary model with Optuna tuning)
+
+**Optuna Hyperparameter Tuning:**
+```python
+# Search Space
+max_depth: 3-10
+learning_rate: 0.01-0.3 (log scale)
+n_estimators: 100-500
+subsample: 0.6-1.0
+colsample_bytree: 0.6-1.0
+reg_alpha, reg_lambda: 0.0-1.0
+scale_pos_weight: calculated from class ratio (~578x)
+
+# Objective: Maximize ROC-AUC
+# Trials: 100
+# CV: 5-fold stratified
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                            MODEL TRAINING PIPELINE                                   │
-├─────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                     │
-│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
-│  │                              DATA SPLIT                                       │   │
-│  │  ─────────────────────────────────────────────────────────────────────────  │   │
-│  │                                                                               │   │
-│  │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐                   │   │
-│  │  │    TRAIN     │    │   VALIDATE   │    │     TEST     │                   │   │
-│  │  │     70%      │    │     15%      │    │     15%      │                   │   │
-│  │  │  199,365 rws │    │   42,721 rws │    │   42,721 rws │                   │   │
-│  │  │ Stratified   │    │  Stratified  │    │  Stratified  │                   │   │
-│  │  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘                   │   │
-│  └─────────┼──────────────────┼───────────────────┼───────────────────────────┘   │
-│            │                  │                   │                               │
-│  ┌─────────┼──────────────────┼───────────────────┼─────────────────────────────┐   │
-│  │         ▼                  ▼                   ▼          CROSS-VALIDATION     │   │
-│  │  ┌────────────────────────────────────────────────────────────────────────┐   │   │
-│  │  │                     5-FOLD STRATIFIED CV                               │   │   │
-│  │  │  ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐            │   │   │
-│  │  │  │ Fold 1 │  │ Fold 2 │  │ Fold 3 │  │ Fold 4 │  │ Fold 5 │  Mean/Std │   │   │
-│  │  │  └───┬────┘  └───┬────┘  └───┬────┘  └───┬────┘  └───┬────┘            │   │   │
-│  │  │      │           │           │           │           │                  │   │   │
-│  │  │  ┌───▼───────────▼───────────▼───────────▼───────────▼───┐              │   │   │
-│  │  │  │         HYPERPARAMETER SEARCH (Optuna)                │              │   │   │
-│  │  │  │  ┌───────────────────────────────────────────────┐    │              │   │   │
-│  │  │  │  │  Trials: 100                                 │    │              │   │   │
-│  │  │  │  │  Sampler: TPE (Tree-structured Parzen Est.) │    │              │   │   │
-│  │  │  │  │  Pruner: Median (early stopping)            │    │              │   │   │
-│  │  │  │  │  Objective: Maximize ROC-AUC                 │    │              │   │   │
-│  │  │  │  └───────────────────────────────────────────────┘    │              │   │   │
-│  │  │  └────────────────────────────────────────────────────────┘              │   │   │
-│  │  └────────────────────────────────────────────────────────────────────────┘   │   │
-│  │                                                                               │   │
-│  │  ┌────────────────────────────────────────────────────────────────────────┐   │   │
-│  │  │                         MODEL CANDIDATES                               │   │   │
-│  │  ├────────────────────┬────────────────────┬────────────────────────────┤   │   │
-│  │  │  Logistic          │  Random Forest     │  XGBoost                 │   │   │
-│  │  │  Regression        │                    │  ← PRIMARY MODEL        │   │   │
-│  │  ├────────────────────┼────────────────────┼────────────────────────────┤   │   │
-│  │  │ • Interpretable    │ • Robust           │ • Best accuracy          │   │   │
-│  │  │ • Fast training    │ • Handles noise    │ • Built-in regularization │   │   │
-│  │  │ • Baseline         │ • No scaling req   │ • Missing value handling  │   │   │
-│  │  │ • class_weight     │ • class_weight     │ • scale_pos_weight       │   │   │
-│  │  └────────────────────┴────────────────────┴────────────────────────────┘   │   │
-│  │                                                                               │   │
-│  │  ┌────────────────────────────────────────────────────────────────────────┐   │   │
-│  │  │                    EVALUATION METRICS                                   │   │   │
-│  │  ├────────────┬──────────────┬──────────────┬──────────────┬─────────────┤   │   │
-│  │  │ Precision  │    Recall    │   F1-Score   │   ROC-AUC    │  PR-AUC     │   │   │
-│  │  │   ≥ 0.85   │    ≥ 0.90    │   harmonic   │   ≥ 0.95    │  imbalanced │   │   │
-│  │  └────────────┴──────────────┴──────────────┴──────────────┴─────────────┘   │   │
-│  │                                                                               │   │
-│  │  ┌────────────────────────────────────────────────────────────────────────┐   │   │
-│  │  │                    CLASS IMBALANCE HANDLING                             │   │   │
-│  │  │  ✓ class_weight="balanced" (Primary method)                            │   │   │
-│  │  │  ✓ Threshold optimization on PR curve                                  │   │   │
-│  │  │  ✗ SMOTE (synthetic data - risk of noise)                              │   │   │
-│  │  └────────────────────────────────────────────────────────────────────────┘   │   │
-│  └───────────────────────────────────────────────────────────────────────────────┘   │
-│                                    │                                                 │
-│                                    ▼                                                 │
-│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
-│  │                        MODEL ARTIFACT                                       │   │
-│  │  models/fraud_detector_v1.0.0.pkl                                           │   │
-│  │  ─────────────────────────────────────────────────────────────────────────  │   │
-│  │  • Trained model weights                                                    │   │
-│  │  • Scaler parameters (fitted on training data)                              │   │
-│  │  • Feature names and order                                                  │   │
-│  │  • Training metadata (date, data hash, metrics)                             │   │
-│  └─────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+
+**Final Model Performance (v1.0):**
+| Metric | Value | Target | Status |
+|--------|-------|--------|--------|
+| ROC-AUC | 0.9814 | ≥ 0.95 | ✅ Pass |
+| Precision | 0.8646 | ≥ 0.85 | ✅ Pass |
+| Recall | 0.8469 | ≥ 0.90 | ⚠️ Close |
+| F1-Score | 0.8557 | ≥ 0.87 | ⚠️ Close |
+
+---
+
+### 4. API Module (`app/`)
+
+**File:** `app/main.py` - FastAPI Application
+
+**Endpoints (14 total):**
+
+| Method | Endpoint | Auth | Purpose |
+|--------|----------|------|---------|
+| GET | `/` | None | API information |
+| GET | `/api/v1/health` | None | Health check |
+| GET | `/api/v1/model/info` | None | Model metadata |
+| GET | `/api/v1/dashboard/stats` | None | Summary stats |
+| GET | `/api/v1/dashboard/hourly` | None | Hourly statistics |
+| GET | `/api/v1/dashboard/response-times` | None | Latency data |
+| GET | `/api/v1/dashboard/high-risk` | None | High-risk transactions |
+| GET | `/api/v1/dashboard/probability-distribution` | None | Probability histogram |
+| GET | `/api/v1/dashboard/predictions/recent` | None | Recent predictions |
+| GET | `/api/v1/dashboard/errors` | None | Error logs |
+| POST | `/api/v1/predict` | **API Key** | Single prediction |
+| POST | `/api/v1/predict/batch` | **API Key** | Batch prediction |
+
+**API Keys:**
+- `dev-key-12345` (development)
+- `test-key-67890` (testing)
+- From `API_KEY` env var (production)
+
+**Middleware:**
+- CORS (allow origins: localhost:3000, localhost:8501)
+- Request logging (logs method, path, status, time)
+- Rate limiting (60 requests/minute per key)
+- Exception handlers (RFC 7807 Problem Details)
+
+---
+
+### 5. Model Service (`app/model.py`)
+
+**Class:** `ModelService` (Singleton Pattern)
+
+**Responsibilities:**
+- Load model ONCE at startup (singleton)
+- Thread-safe for concurrent requests
+- Return predictions with risk levels (HIGH/MEDIUM/LOW)
+
+**Input Features (31 total):**
 ```
+[V1-V28] + [amount_scaled, hour_sin, hour_cos]
+```
+
+**Risk Levels:**
+- **HIGH**: probability ≥ 0.70
+- **MEDIUM**: probability ≥ 0.30
+- **LOW**: probability < 0.30
+
+---
+
+### 6. Logging Module (`app/logging_config.py`)
+
+**Class:** `PredictionLogger`
+
+**Dual Logging:**
+1. **File Logging** (JSONL): `logs/predictions.jsonl`, `logs/errors.jsonl`
+2. **Database Logging** (PostgreSQL): `predictions_log`, `error_logs`
+
+**Logged Per Prediction:**
+- transaction_id, request data, response data
+- fraud_probability, prediction, risk_level
+- latency_ms, timestamp, api_key_prefix
+- **Drift Monitoring**: V1-V28 features logged to `prediction_inputs` table
 
 ---
 
 ## Data Flow Architecture
 
+### Offline Training Flow (Week 2)
+
 ```
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│                              END-TO-END DATA FLOW                                     │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+Kaggle CSV → ETL Pipeline → PostgreSQL (transactions_raw)
+  (284,807)    (Cron)            (raw data)
+                                   │
+                                   ▼
+                          Feature Engineering
+                          (hour, is_night, scaling)
+                                   │
+                                   ▼
+                         Stratified Train/Test Split
+                         (70/15/15 split)
+                                   │
+              ┌──────────────────┴──────────────────┐
+              ▼                                     ▼
+      Model Training                         Model Evaluation
+      (XGBoost + Optuna)                      (ROC-AUC, PR curve)
+              │
+              ▼
+      Model Artifact
+      fraud_detector_v1.pkl (862KB)
+      + metadata.json
+```
 
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│ PHASE 1: OFFLINE TRAINING (Week 2)                                                  │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                      │
-│  Kaggle CSV ──▶ ETL Pipeline ──▶ PostgreSQL ──▶ Feature Engineering ──▶ Training     │
-│     (284K)         (Cron)            (raw)              (features)          (XGBoost) │
-│                                                                               │       │
-│                                                                               ▼       │
-│                                                                      models/fraud_v1.pkl │
-│                                                                                      │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+### Online Inference Flow (Week 3)
 
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│ PHASE 2: ONLINE INFERENCE (Week 3)                                                  │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                      │
-│  Client Request                                                                      │
-│       │                                                                              │
-│       ▼                                                                              │
-│  ┌─────────────────────────────────────────────────────────────────────────────┐    │
-│  │  POST /api/v1/predict                                                        │    │
-│  │  ─────────────────────────────────────────────────────────────────────────── │    │
-│  │  {                                                                           │    │
-│  │    "transaction_id": "TXN-2024-001",                                        │    │
-│  │    "amount": 149.99,                                                        │    │
-│  │    "time_elapsed": 43200.0,                                                 │    │
-│  │    "features": [0.12, -1.34, 0.89, ...]  // V1-V28                         │    │
-│  │  }                                                                           │    │
-│  └─────────────────────────────────────────────────────────────────────────────┘    │
-│                                     │                                               │
-│                                     ▼                                               │
-│  ┌─────────────────────────────────────────────────────────────────────────────┐    │
-│  │                         FASTAPI SERVICE                                      │    │
-│  │  ─────────────────────────────────────────────────────────────────────────── │    │
-│  │                                                                               │    │
-│  │  1. Request Validation (Pydantic)                                             │    │
-│  │  2. Feature Transformation (using fitted scaler)                              │    │
-│  │  3. Model Inference (XGBoost.predict)                                         │    │
-│  │  4. Response Formatting                                                        │    │
-│  │  5. Logging to predictions_log table                                          │    │
-│  │                                                                               │    │
-│  └─────────────────────────────────────────────────────────────────────────────┘    │
-│                                     │                                               │
-│                                     ▼                                               │
-│  ┌─────────────────────────────────────────────────────────────────────────────┐    │
-│  │  RESPONSE                                                                    │    │
-│  │  ─────────────────────────────────────────────────────────────────────────── │    │
-│  │  {                                                                           │    │
-│  │    "transaction_id": "TXN-2024-001",                                        │    │
-│  │    "prediction": 0,                                                          │    │
-│  │    "fraud_probability": 0.023,                                               │    │
-│  │    "risk_level": "LOW",                                                      │    │
-│  │    "model_version": "v1.0.0",                                                │    │
-│  │    "latency_ms": 12.5                                                        │    │
-│  │  }                                                                           │    │
-│  └─────────────────────────────────────────────────────────────────────────────┘    │
-│                                                                                      │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+```
+Client Request (Dashboard/API)
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  POST /api/v1/predict                                                            │
+│  {                                                                               │
+│    "transaction_id": "txn_001",                                                 │
+│    "amount": 150.0,                                                             │
+│    "features": [31 values]  // V1-V28 + amount_scaled + hour_sin + hour_cos      │
+│  }                                                                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+                  ┌────────────────────────────────────────────────────────────┐
+                  │              FastAPI Service                             │
+                  │  ────────────────────────────────────────────────────────│
+                  │                                                              │
+                  │  1. Verify API Key (auth.py)                                  │
+                  │  2. Validate Request (schemas.py)                             │
+                  │  3. Model Inference (model.py)                               │
+                  │  4. Calculate Risk Level                                       │
+                  │  5. Log to Database + File (logging_config.py)                   │
+                  │  6. Log Features for Drift (prediction_inputs)                │
+                  │                                                              │
+                  └──────────────────────────────────────────────────────────────┘
+                                       │
+                           ▼
+                  ┌────────────────────────────────────────────────────────────┐
+                  │  Response                                                          │
+                  │  {                                                                 │
+                  │    "transaction_id": "txn_001",                                       │
+                  │    "fraud_probability": 0.023,                                      │
+                  │    "prediction": 0,                                                  │
+                  │    "risk_level": "LOW",                                             │
+                  │    "threshold_used": 0.5,                                           │
+                  │    "processed_at": "2026-03-26T10:30:00Z"                           │
+                  │  }                                                                 │
+                  └────────────────────────────────────────────────────────────┘
+                                       │
+                           ▼
+                  ┌────────────────────────────────────────────────────────────┐
+                  │  Logged to:                                                        │
+                  │  • predictions_log (main table)                                  │
+                  │  • prediction_inputs (V1-V28 for drift)                           │
+                  │  • logs/predictions.jsonl (fallback)                               │
+                  └────────────────────────────────────────────────────────────┘
+```
 
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│ PHASE 3: MONITORING & RETRAINING (Week 4)                                           │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                      │
-│  predictions_log ──▶ Daily Aggregation ──▶ Performance Metrics ──▶ Drift Detection   │
-│       │                    │                        │                     │          │
-│       │                    │                        │                     ▼          │
-│       │                    │                        │           ┌───────────────────┐ │
-│       │                    │                        │           │  PSI > 0.2?       │ │
-│       │                    │                        │           │  Recall < 0.85?   │ │
-│       │                    │                        │           └─────────┬─────────┘ │
-│       │                    │                        │                     │ Yes     │
-│       │                    │                        │                     ▼         │
-│       │                    │                        │           ┌───────────────────┐ │
-│       │                    │                        │           │  TRIGGER          │ │
-│       │                    │                        │           │  RETRAINING       │ │
-│       │                    │                        │           │  PIPELINE         │ │
-│       │                    │                        │           └───────────────────┘ │
-│                                                                                      │
+### Monitoring & Alerting Flow (Week 4)
+
+```
+┌──────────────────────────────────────────────────────────────────────────────────────────┐
+│                          MONITORING & ALERTING LAYER                                   │
+├──────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                          │
+│  ┌────────────────────────────────────────────────────────────────────────────────────┐ │
+│  │                    CRON JOB (Every 5 minutes)                                  │ │
+│  │                    src/alerting.py → run_monitoring_checks()                      │ │
+│  └────────────────────────────────────────────────────────────────────────────────────┘ │
+│                                          │                                          │
+│  ┌──────────────────────────────────────┴──────────────────────────────────────┐   │
+│  │                            MONITORING CHECKS                                │   │
+│  │  ┌────────────────────────────────────────────────────────────────────────┐   │   │
+│  │  │ 1. API Error Rate Check                                                       │   │   │
+│  │  │    • Query: SELECT COUNT(*) FROM predictions_log WHERE predicted_at ≥ NOW-5min │   │   │
+│  │  │    • Query: SELECT COUNT(*) FROM error_logs WHERE predicted_at ≥ NOW-5min   │   │   │
+│  │  │    • Alert if error_rate > 1%                                                 │   │   │
+│  │  └────────────────────────────────────────────────────────────────────────┘   │   │
+│  │  ┌────────────────────────────────────────────────────────────────────────┐   │   │
+│  │  │ 2. Latency Spike Check                                                       │   │   │
+│  │  │    • Query: PERCENTILE_CONT(0.99) FROM predictions_log                   │   │   │
+│  │  │    • Alert if p99 > 500ms sustained for 10 minutes                         │   │   │
+│  │  └────────────────────────────────────────────────────────────────────────┘   │   │
+│  │  ┌────────────────────────────────────────────────────────────────────────┐   │   │
+│  │  │ 3. Model Degradation Check                                                   │   │   │
+│  │  │    • Check model file age (> 30 days = warning)                            │   │   │
+│  │  │    • Compare metrics vs baseline (metadata.json)                            │   │   │
+│  │  └────────────────────────────────────────────────────────────────────────┘   │   │
+│  └───────────────────────────────────────────────────────────────────────────────┘   │
+│                                          │                                          │
+│  ┌──────────────────────────────────────┴──────────────────────────────────────┐   │
+│  │                         ALERT DISPATCHER                                     │   │
+│  │  ─────────────────────────────────────────────────────────────────────────────   │   │
+│  │  • EmailAlerter.send_alert() → Gmail SMTP                                  │   │   │
+│  │  • log_alert_to_db() → alerts_log table                                     │   │   │
+│  └───────────────────────────────────────────────────────────────────────────────┘   │
+│                                                                                          │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -323,488 +365,411 @@
 
 ## API Architecture
 
+### Request/Response Flow
+
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────┐
-│                              FASTAPI SERVICE ARCHITECTURE                             │
+│                           FASTAPI SERVICE LAYERS                                     │
 └──────────────────────────────────────────────────────────────────────────────────────┘
 
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│                                   LAYERED ARCHITECTURE                                │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                      │
-│  ┌────────────────────────────────────────────────────────────────────────────────┐ │
-│  │                          FASTAPI APPLICATION                                   │ │
-│  │  ────────────────────────────────────────────────────────────────────────────  │ │
-│  │                                                                                 │ │
-│  │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐      │ │
-│  │  │  ROUTE LAYER │───▶│ MIDDLEWARE  │───▶│ VALIDATION  │───▶│  BUSINESS   │      │ │
-│  │  │             │    │   LAYER     │    │   LAYER     │    │   LOGIC     │      │ │
-│  │  │ • /predict  │    │ • CORS      │    │ • Pydantic  │    │ • Model Svc │      │ │
-│  │  │ • /health   │    │ • Logging   │    │ • Type     │    │ • Transform │      │ │
-│  │  │ • /model    │    │ • Error     │    │   checks    │    │ • Predict   │      │ │
-│  │  │ • /docs     │    │   handling  │    │             │    │             │      │ │
-│  │  └─────────────┘    └─────────────┘    └─────────────┘    └──────┬──────┘      │ │
-│  │                                                                 │               │ │
-│  └─────────────────────────────────────────────────────────────────┼───────────────┘ │
-│                                                                    │                 │
-│  ┌─────────────────────────────────────────────────────────────────┼───────────────┐ │
-│  │                         SERVICE LAYER                           │               │ │
-│  │  ─────────────────────────────────────────────────────────────────────────────  │ │
-│  │                                                                    │               │ │
-│  │  ┌─────────────────────────────────────────────────────────────────▼──────────┐  │ │
-│  │  │                         ModelService                                 │  │ │
-│  │  │  • Singleton pattern (one model instance)                            │  │ │
-│  │  │  • Lazy loading (load on first request)                              │  │ │
-│  │  │  • Version-aware (supports A/B testing)                              │  │ │
-│  │  └────────────────────────────────────────────────────────────────────┘  │ │
-│  │                                                                            │ │
-│  └────────────────────────────────────────────────────────────────────────────┘ │
-│                                    │                                               │
-│                                    ▼                                               │
-│  ┌────────────────────────────────────────────────────────────────────────────────┐ │
-│  │                          DATA LAYER                                           │ │
-│  │  ────────────────────────────────────────────────────────────────────────────  │ │
-│  │                                                                                │ │
-│  │  ┌────────────────┐    ┌────────────────┐    ┌────────────────┐              │ │
-│  │  │  MODEL FILES   │    │  POSTGRESQL    │    │   REDIS        │              │ │
-│  │  │  (Disk)        │    │  (Database)    │    │  (Cache-Future)│              │ │
-│  │  │  • .pkl        │    │  • predictions  │    │  • Session     │              │ │
-│  │  │  • metadata    │    │  • features     │    │  • Rate limit  │              │ │
-│  │  └────────────────┘    └────────────────┘    └────────────────┘              │ │
-│  │                                                                                │ │
-│  └────────────────────────────────────────────────────────────────────────────────┘ │
-│                                                                                     │
+Client Request
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│  1. MIDDLEWARE LAYER                                                              │
+│  ────────────────────────────────────────────────────────────────────────────────│
+│  • CORS Middleware: Allow origins (localhost:3000, localhost:8501)                │
+│  • Request Logging: Log method, path, status, time                             │
+│  • Exception Handlers: APIException, HTTPException → RFC 7807 Problem Details      │
 └─────────────────────────────────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│  2. AUTHENTICATION LAYER (for protected endpoints)                                    │
+│  ────────────────────────────────────────────────────────────────────────────────│
+│  • verify_api_key: Extract X-API-Key header                                      │
+│  • Validate against VALID_API_KEYS dict                                        │
+│  • Return 401 Unauthorized if invalid                                             │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│  3. VALIDATION LAYER                                                              │
+│  ────────────────────────────────────────────────────────────────────────────────│
+│  • Pydantic Schema Validation                                                     │
+│  • PredictionRequest: transaction_id (str), amount (float, >0), features (31 floats)│
+│  • Auto-generates OpenAPI docs at /docs                                          │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│  4. BUSINESS LOGIC LAYER                                                            │
+│  ────────────────────────────────────────────────────────────────────────────────│
+│  • ModelService.predict()                                                        │
+│  • Features: [V1-V28, amount_scaled, hour_sin, hour_cos]                          │
+│  • Risk Level Classification: HIGH/MEDIUM/LOW based on probability                  │
+│  • Threshold: 0.5 (default)                                                        │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│  5. LOGGING LAYER                                                                   │
+│  ────────────────────────────────────────────────────────────────────────────────│
+│  • prediction_logger.log_prediction()                                           │
+│  │   - PostgreSQL: predictions_log table                                         │
+│  │   - File: logs/predictions.jsonl                                               │
+│  │   - Drift: prediction_inputs table (V1-V28)                                  │
+│  • On error: log_error() → error_logs table + logs/errors.jsonl                     │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+       │
+       ▼
+   Response to Client
 ```
+
+### Dashboard Data Endpoints
+
+**Purpose:** Feed Streamlit dashboard with real-time metrics
+
+| Endpoint | Returns | Used By |
+|----------|---------|---------|
+| `/api/v1/dashboard/stats` | Total count, fraud count, fraud rate, avg probability, avg latency, risk counts | Overview page KPIs |
+| `/api/v1/dashboard/hourly` | Hourly labels, volumes, fraud rates (last 24-168 hours) | Overview page trend chart |
+| `/api/v1/dashboard/response-times` | Last 100 latency values (chronological) | Overview page latency chart |
+| `/api/v1/dashboard/high-risk` | Last 10 HIGH risk transactions | Overview page high-risk table |
+| `/api/v1/dashboard/predictions/recent` | Last 50 predictions with details | Transactions page |
+| `/api/v1/dashboard/errors` | Last 20 errors from error_logs | API Health page |
 
 ---
 
 ## Database Schema
 
-```
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│                            POSTGRESQL DATABASE SCHEMA                                 │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                      │
-│  Database: fraud_detection                                                          │
-│                                                                                      │
-│  ┌────────────────────────────────────────────────────────────────────────────────┐ │
-│  │  TABLE: transactions_raw                                                        │ │
-│  │  Purpose: Store raw ingested transaction data                                  │ │
-│  │  ────────────────────────────────────────────────────────────────────────────  │ │
-│  │  Column              │ Type        │ Nullable │ Description                    │ │
-│  │  ────────────────────┼─────────────┼──────────┼─────────────────────────────  │ │
-│  │  id                  │ SERIAL      │ NO       │ Primary key, auto-increment   │ │
-│  │  time_elapsed        │ FLOAT       │ NO       │ Seconds from first transaction │ │
-│  │  v1 through v28      │ FLOAT       │ NO       │ PCA-transformed features       │ │
-│  │  amount              │ FLOAT       │ NO       │ Transaction amount in USD     │ │
-│  │  class               │ INTEGER     │ NO       │ 0=legitimate, 1=fraud         │ │
-│  │  ingested_at         │ TIMESTAMP   │ NO       │ When record was loaded        │ │
-│  │  ────────────────────┴─────────────┴──────────┴─────────────────────────────  │ │
-│  │  Indexes:                                                                      │ │
-│  │    • idx_ingested_at (ingested_at)                                           │ │
-│  │    • idx_class (class)                                                        │ │
-│  └────────────────────────────────────────────────────────────────────────────────┘ │
-│                                                                                      │
-│  ┌────────────────────────────────────────────────────────────────────────────────┐ │
-│  │  TABLE: transactions_features                                                   │ │
-│  │  Purpose: Store engineered features for model training/inference               │ │
-│  │  ────────────────────────────────────────────────────────────────────────────  │ │
-│  │  Column              │ Type        │ Nullable │ Description                    │ │
-│  │  ────────────────────┼─────────────┼──────────┼─────────────────────────────  │ │
-│  │  id                  │ SERIAL      │ NO       │ Primary key                   │ │
-│  │  transaction_id      │ INTEGER     │ NO       │ FK → transactions_raw.id      │ │
-│  │  amount_scaled       │ FLOAT       │ YES      │ Standard-scaled amount        │ │
-│  │  hour_of_day         │ INTEGER     │ YES      │ Hour (0-23) from Time         │ │
-│  │  is_night            │ BOOLEAN     │ YES      │ Transaction at night?         │ │
-│  │  amount_zscore       │ FLOAT       │ YES      │ Z-score vs cardholder mean    │ │
-│  │  amount_percentile   │ FLOAT       │ YES      │ Percentile rank               │ │
-│  │  v1 through v28      │ FLOAT       │ NO       │ Original PCA features        │ │
-│  │  created_at          │ TIMESTAMP   │ NO       │ Feature generation time       │ │
-│  │  ────────────────────┴─────────────┴──────────┴─────────────────────────────  │ │
-│  │  Indexes:                                                                      │ │
-│  │    • idx_transaction_id (transaction_id)                                      │ │
-│  │    • idx_created_at (created_at)                                              │ │
-│  │  Foreign Key:                                                                  │ │
-│  │    • transaction_id → transactions_raw.id                                     │ │
-│  └────────────────────────────────────────────────────────────────────────────────┘ │
-│                                                                                      │
-│  ┌────────────────────────────────────────────────────────────────────────────────┐ │
-│  │  TABLE: predictions_log                                                         │ │
-│  │  Purpose: Log every inference for monitoring and audit                         │ │
-│  │  ────────────────────────────────────────────────────────────────────────────  │ │
-│  │  Column              │ Type            │ Nullable │ Description                │ │
-│  │  ────────────────────┼─────────────────┼──────────┼──────────────────────────  │ │
-│  │  id                  │ SERIAL          │ NO       │ Primary key                │ │
-│  │  transaction_id      │ VARCHAR(50)     │ NO       │ Transaction identifier      │ │
-│  │  prediction          │ INTEGER         │ NO       │ 0=legitimate, 1=fraud      │ │
-│  │  confidence          │ FLOAT           │ NO       │ Fraud probability          │ │
-│  │  risk_level          │ VARCHAR(10)     │ NO       │ LOW/MEDIUM/HIGH            │ │
-│  │  model_version       │ VARCHAR(50)     │ NO       │ Model version used         │ │
-│  │  latency_ms          │ FLOAT           │ NO       │ Inference latency          │ │
-│  │  input_hash          │ VARCHAR(64)     │ YES      │ Hash of input features     │ │
-│  │  predicted_at        │ TIMESTAMP       │ NO       │ Prediction timestamp       │ │
-│  │  ────────────────────┴─────────────────┴──────────┴──────────────────────────  │ │
-│  │  Indexes:                                                                      │ │
-│  │    • idx_predicted_at (predicted_at)                                           │ │
-│  │    • idx_model_version (model_version)                                         │ │
-│  │    • idx_prediction (prediction)                                               │ │
-│  │  Partitioning:                                                                 │ │
-│  │    • Weekly partition on predicted_at (for query performance)                 │ │
-│  └────────────────────────────────────────────────────────────────────────────────┘ │
-│                                                                                      │
-│  ┌────────────────────────────────────────────────────────────────────────────────┐ │
-│  │  TABLE: pipeline_audit                                                          │ │
-│  │  Purpose: Track ETL pipeline runs                                               │ │
-│  │  ────────────────────────────────────────────────────────────────────────────  │ │
-│  │  Column              │ Type            │ Description                            │ │
-│  │  ────────────────────┼─────────────────┼────────────────────────────────────  │ │
-│  │  id                  │ SERIAL          │ Primary key                            │ │
-│  │  pipeline_name       │ VARCHAR(100)    │ Pipeline identifier                   │ │
-│  │  started_at          │ TIMESTAMP       │ Start timestamp                        │ │
-│  │  completed_at        │ TIMESTAMP       │ End timestamp                          │ │
-│  │  status              │ VARCHAR(20)     │ SUCCESS/FAILED/PARTIAL                 │ │
-│  │  rows_processed      │ INTEGER         │ Number of rows processed              │ │
-│  │  error_message       │ TEXT            │ Error details if failed                │ │
-│  │  ────────────────────┴─────────────────┴────────────────────────────────────  │ │
-│  └────────────────────────────────────────────────────────────────────────────────┘ │
-│                                                                                      │
-│  ┌────────────────────────────────────────────────────────────────────────────────┐ │
-│  │  TABLE: model_registry                                                           │ │
-│  │  Purpose: Track trained model versions                                          │ │
-│  │  ────────────────────────────────────────────────────────────────────────────  │ │
-│  │  Column              │ Type            │ Description                            │ │
-│  │  ────────────────────┼─────────────────┼────────────────────────────────────  │ │
-│  │  id                  │ SERIAL          │ Primary key                            │ │
-│  │  model_version       │ VARCHAR(50)     │ Version identifier (v1.0.0)            │ │
-│  │  model_path          │ VARCHAR(255)    │ Path to model artifact                 │ │
-│  │  trained_at          │ TIMESTAMP       │ Training timestamp                    │ │
-│  │  roc_auc             │ FLOAT           │ Test set ROC-AUC                       │ │
-│  │  precision           │ FLOAT           │ Test set precision                    │ │
-│  │  recall              │ FLOAT           │ Test set recall                       │ │
-│  │  f1_score            │ FLOAT           │ Test set F1 score                     │ │
-│  │  threshold           │ FLOAT           │ Optimal threshold                     │ │
-│  │  data_hash           │ VARCHAR(64)     │ Hash of training data                  │ │
-│  │  is_active           │ BOOLEAN         │ Currently deployed?                   │ │
-│  │  ────────────────────┴─────────────────┴────────────────────────────────────  │ │
-│  └────────────────────────────────────────────────────────────────────────────────┘ │
-│                                                                                      │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+### Complete Table Listing
 
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│                              ENTITY RELATIONSHIP DIAGRAM                              │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                      │
-│   transactions_raw                    transactions_features                          │
-│   ┌──────────────────┐               ┌──────────────────┐                           │
-│   │ id (PK)          │◄──────────────│ transaction_id   │                           │
-│   │ time_elapsed     │               │ (FK)             │                           │
-│   │ v1-v28           │               │ amount_scaled    │                           │
-│   │ amount           │               │ hour_of_day      │                           │
-│   │ class            │               │ is_night         │                           │
-│   │ ingested_at      │               │ v1-v28           │                           │
-│   └──────────────────┘               └──────────────────┘                           │
-│                                                                                      │
-│                                                                                      │
-│   predictions_log                                                                  │
-│   ┌──────────────────┐                                                            │
-│   │ id (PK)          │                                                            │
-│   │ transaction_id   │───────► (External: transaction references)                  │
-│   │ prediction       │                                                            │
-│   │ confidence       │                                                            │
-│   │ model_version    │─────────────► model_registry                                │
-│   │ predicted_at     │                                                            │
-│   └──────────────────┘                                                            │
-│                                                                                      │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+| Table | Purpose | Rows | Key Columns |
+|-------|---------|------|-------------|
+| `transactions_raw` | Raw Kaggle data | 284,807 | id, time_elapsed, v1-v28, amount, class |
+| `transactions_features` | Engineered features | 284,807 | id, amount_scaled, hour, is_night, hour_sin, hour_cos |
+| `transactions_training` | Features + labels for retraining | 284,807 | id, time_elapsed, v1-v28, amount, amount_scaled, hour_sin, hour_cos, class |
+| `predictions_log` | API predictions | N/A | id, transaction_id, prediction, confidence, risk_level, model_version, latency_ms, predicted_at |
+| `prediction_inputs` | V1-V28 for drift monitoring | N/A | transaction_id, v1-v28 |
+| `error_logs` | API errors | N/A | id, endpoint, error_type, error_message, transaction_id, amount, predicted_at |
+| `alerts_log` | Alert history | N/A | id, alert_type, severity, title, message, details, email_sent, created_at |
+| `retraining_log` | Retraining run history | N/A | id, run_id, triggered_by, status, roc_auc, precision, recall, promoted, new_model_version |
+| `pipeline_audit` | ETL run history | N/A | id, pipeline_name, started_at, completed_at, status, rows_processed |
+
+### Schema Definitions
+
+**transactions_raw:**
+```sql
+CREATE TABLE transactions_raw (
+    id SERIAL PRIMARY KEY,
+    time_elapsed FLOAT NOT NULL,
+    v1 THROUGH v28 FLOAT NOT NULL,
+    amount FLOAT NOT NULL,
+    class INTEGER NOT NULL,
+    ingested_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+**predictions_log:**
+```sql
+CREATE TABLE predictions_log (
+    id SERIAL PRIMARY KEY,
+    transaction_id VARCHAR(50),
+    prediction INTEGER NOT NULL,
+    confidence FLOAT,
+    risk_level VARCHAR(10),
+    model_version VARCHAR(50),
+    latency_ms FLOAT,
+    predicted_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+**alerts_log:**
+```sql
+CREATE TABLE alerts_log (
+    id SERIAL PRIMARY KEY,
+    alert_type VARCHAR(50),
+    severity VARCHAR(20),
+    title VARCHAR(200),
+    message TEXT,
+    details JSONB,
+    email_sent BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+**retraining_log:**
+```sql
+CREATE TABLE retraining_log (
+    id SERIAL PRIMARY KEY,
+    run_id VARCHAR(50) UNIQUE NOT NULL,
+    triggered_by VARCHAR(50) NOT NULL,
+    started_at TIMESTAMP NOT NULL,
+    completed_at TIMESTAMP,
+    status VARCHAR(20) NOT NULL,
+    data_rows INTEGER,
+    data_window_days INTEGER,
+    roc_auc FLOAT,
+    precision FLOAT,
+    recall FLOAT,
+    f1_score FLOAT,
+    baseline_roc_auc FLOAT,
+    baseline_precision FLOAT,
+    baseline_recall FLOAT,
+    validation_passed BOOLEAN,
+    promoted BOOLEAN DEFAULT FALSE,
+    new_model_version VARCHAR(50),
+    error_message TEXT,
+    metadata JSONB,
+    created_at TIMESTAMP DEFAULT NOW()
+);
 ```
 
 ---
 
-## Deployment Architecture
+## Dashboard Architecture
+
+### Streamlit Dashboard (`dashboard/`)
+
+**Pages:**
+
+| Page | File | Purpose |
+|------|------|---------|
+| Overview | `app.py` | KPI cards, fraud rate trend, high-risk transactions |
+| Model Performance | `pages/1_Model_Performance.py` | Metrics, confusion matrix, probability distribution |
+| Transactions | `pages/2_Transactions.py` | Live prediction testing, transaction history |
+| API Health | `pages/3_API_Health.py` | Endpoint status, response times, error logs, system alerts |
+| Drift Monitor | `pages/4_Drift_Monitor.py` | PSI heatmap, KS test results, feature drift table |
+
+### Dashboard Utilities
+
+| Module | File | Purpose |
+|--------|------|---------|
+| Config | `config.py` | Colors, typography, CSS, sidebar builder |
+| Data Loader | `utils/data_loader.py` | PostgreSQL queries with `@st.cache_data(ttl=5)` |
+| API Client | `utils/api_client.py` | HTTP client to FastAPI backend |
+| Charts | `utils/charts.py` | Plotly chart builders |
+| Feature Preprocessing | `utils/feature_preprocessing.py` | Feature computation helpers |
+
+### Dashboard → API Communication
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│                            AWS EC2 DEPLOYMENT ARCHITECTURE                             │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                      │
-│                              ┌───────────────────┐                                   │
-│                              │   INTERNET         │                                   │
-│                              └─────────┬─────────┘                                   │
-│                                        │                                             │
-│                                        ▼                                             │
-│                              ┌───────────────────┐                                   │
-│                              │  AWS Security     │                                   │
-│                              │  Group / NACL     │                                   │
-│                              └─────────┬─────────┘                                   │
-│                                        │                                             │
-│                      ┌─────────────────┼─────────────────┐                          │
-│                      │                 │                 │                          │
-│                      ▼                 ▼                 ▼                          │
-│            ┌─────────────┐   ┌─────────────┐   ┌─────────────┐                      │
-│            │   Port 8000  │   │   Port 8501  │   │   Port 22   │                      │
-│            │  (FastAPI)  │   │ (Streamlit) │   │   (SSH)     │                      │
-│            └──────┬──────┘   └──────┬──────┘   └──────┬──────┘                      │
-│                   │                 │                 │                             │
-│                   └─────────────────┼─────────────────┘                             │
-│                                    │                                               │
-│                                    ▼                                               │
-│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
-│  │                        EC2 INSTANCE (t2.micro Free Tier)                      │   │
-│  │                        1 vCPU, 1 GB RAM                                       │   │
-│  │  ─────────────────────────────────────────────────────────────────────────── │   │
-│  │                                                                               │   │
-│  │  ┌────────────────────────────────────────────────────────────────────────┐ │   │
-│  │  │                         Docker Engine                                 │ │   │
-│  │  │  ───────────────────────────────────────────────────────────────────── │ │   │
-│  │  │                                                                          │ │   │
-│  │  │  ┌────────────────┐          ┌────────────────┐                         │ │   │
-│  │  │  │  Container 1   │          │  Container 2   │                         │ │   │
-│  │  │  │  FastAPI App   │          │  Streamlit     │                         │ │   │
-│  │  │  │  • uvicorn     │          │  streamlit     │                         │ │   │
-│  │  │  │  • Port 8000   │          │  • Port 8501   │                         │ │   │
-│  │  │  │  • Model .pkl  │          │  • Dashboard   │                         │ │   │
-│  │  │  └────────────────┘          └────────────────┘                         │ │   │
-│  │  │                                                                          │ │   │
-│  │  └────────────────────────────────────────────────────────────────────────┘ │   │
-│  │                                                                               │   │
-│  │  ┌────────────────────────────────────────────────────────────────────────┐ │   │
-│  │  │                       PostgreSQL (Self-hosted)                          │ │   │
-│  │  │  • Port 5432                                                             │ │   │
-│  │  │  • Database: fraud_detection                                            │ │   │
-│  │  │  • Bind: localhost (not exposed to internet)                            │ │   │
-│  │  └────────────────────────────────────────────────────────────────────────┘ │   │
-│  │                                                                               │   │
-│  │  ┌────────────────────────────────────────────────────────────────────────┐ │   │
-│  │  │                         System Services                                │ │   │
-│  │  │  • Cron daemon (for ETL scheduling)                                     │ │   │
-│  │  │  • Nginx (optional reverse proxy)                                      │ │   │
-│  │  └────────────────────────────────────────────────────────────────────────┘ │   │
-│  │                                                                               │   │
-│  └───────────────────────────────────────────────────────────────────────────────┘   │
-│                                                                                      │
-│  File System Layout:                                                                │
-│  ─────────────────────────────────────────────────────────────────────────────────  │
-│  /home/ubuntu/fraud-detection/                                                     │
-│    ├── models/                    # Model artifacts (.pkl files)                     │
-│    ├── src/                       # Source code                                    │
-│    ├── logs/                      # Application logs                                │
-│    └── .env                       # Environment variables (not in Git)               │
-│                                                                                      │
-└──────────────────────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│                              SECURITY CONFIGURATION                                   │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                      │
-│  Security Group Rules:                                                               │
-│  ┌──────────────┬─────────────┬──────────────┬─────────────────────────────────────┐ │
-│  │ Type         │ Protocol    │ Port Range    │ Source                             │ │
-│  ├──────────────┼─────────────┼──────────────┼─────────────────────────────────────┤ │
-│  │ SSH          │ TCP         │ 22           │ Your IP (or 0.0.0.0/0 for dev)     │ │
-│  │ HTTP         │ TCP         │ 8000         │ 0.0.0.0/0 (for API)                │ │
-│  │ HTTP         │ TCP         │ 8501         │ 0.0.0.0/0 (for dashboard)          │ │
-│  │ Custom       │ TCP         │ 5432         │ localhost only (via SSH tunnel)    │ │
-│  └──────────────┴─────────────┴──────────────┴─────────────────────────────────────┘ │
-│                                                                                      │
-└──────────────────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## CI/CD Pipeline
-
-```
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│                          GITHUB ACTIONS CI/CD PIPELINE                                │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                      │
-│  Trigger: Push to any branch, Pull Request to main                                  │
-│                                                                                      │
-│  ┌────────────────────────────────────────────────────────────────────────────────┐ │
-│  │                           WORKFLOW: ci-cd.yml                                  │ │
-│  │  ────────────────────────────────────────────────────────────────────────────  │ │
-│  │                                                                                 │ │
-│  │  ┌─────────────────────────────────────────────────────────────────────────┐   │ │
-│  │  │                        JOB 1: TEST                                      │   │ │
-│  │  │  ─────────────────────────────────────────────────────────────────────  │   │ │
-│  │  │  Runs on: ubuntu-latest                                                  │   │ │
-│  │  │                                                                          │   │ │
-│  │  │  Steps:                                                                 │   │ │
-│  │  │  1. Checkout code                                                       │   │ │
-│  │  │  2. Set up Python 3.10                                                  │   │ │
-│  │  │  3. Install dependencies                                                │   │ │
-│  │  │  4. Run linting (flake8)                                                │   │ │
-│  │  │  5. Run unit tests (pytest)                                             │   │ │
-│  │  │  6. Generate coverage report (pytest-cov)                                │   │ │
-│  │  │                                                                          │   │ │
-│  │  │  Success criteria: All tests pass, coverage ≥ 80%                        │   │ │
-│  │  └─────────────────────────────────────────────────────────────────────────┘   │ │
-│  │                                    │                                           │ │
-│  │                                    ▼                                           │ │
-│  │  ┌─────────────────────────────────────────────────────────────────────────┐   │ │
-│  │  │                        JOB 2: BUILD (conditional)                        │   │ │
-│  │  │  ─────────────────────────────────────────────────────────────────────  │   │ │
-│  │  │  Runs on: ubuntu-latest                                                  │   │ │
-│  │  │  Condition: Test job succeeded                                           │   │ │
-│  │  │                                                                          │   │ │
-│  │  │  Steps:                                                                 │   │ │
-│  │  │  1. Set up Docker Buildx                                                 │   │ │
-│  │  │  2. Build Docker image                                                  │   │ │
-│  │  │  3. Tag image: fraud-detection:v{version}                                │   │ │
-│  │  │  4. Run security scan (trivy)                                            │   │ │
-│  │  │                                                                          │   │ │
-│  │  │  Output: Docker image ready for deployment                               │   │ │
-│  │  └─────────────────────────────────────────────────────────────────────────┘   │ │
-│  │                                    │                                           │ │
-│  │                                    ▼                                           │ │
-│  │  ┌─────────────────────────────────────────────────────────────────────────┐   │ │
-│  │  │                  JOB 3: DEPLOY (main branch only)                       │   │ │
-│  │  │  ─────────────────────────────────────────────────────────────────────  │   │ │
-│  │  │  Runs on: ubuntu-latest                                                  │   │ │
-│  │  │  Condition: Push to main, Build succeeded                               │   │ │
-│  │  │                                                                          │   │ │
-│  │  │  Steps:                                                                 │   │ │
-│  │  │  1. Configure AWS credentials                                            │   │ │
-│  │  │  2. Deploy to EC2:                                                       │   │ │
-│  │  │     - SSH into instance                                                  │   │ │
-│  │  │     - Pull new Docker image                                             │   │ │
-│  │  │     - Stop old container                                                │   │ │
-│  │  │     - Start new container                                                │   │ │
-│  │  │  3. Run health check                                                    │   │ │
-│  │  │                                                                          │   │ │
-│  │  │  Rollback: If health check fails, revert to previous version             │   │ │
-│  │  └─────────────────────────────────────────────────────────────────────────┘   │ │
-│  │                                                                                 │ │
-│  └────────────────────────────────────────────────────────────────────────────────┘ │
-│                                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│                              BRANCHING STRATEGY                                       │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                      │
-│     main                                                                            │
-│     │  • Production-ready code only                                               │
-│     │  • Tags: v1.0.0, v1.1.0, etc.                                               │
-│     │  • Protected: require PR + review                                           │
-│     │                                                                            │
-│     ▼                                                                            │
-│   develop                                                                         │
-│     │  • Integration branch                                                     │
-│     │  • All feature branches merge here                                        │
-│     │  • CI runs on every push                                                   │
-│     │                                                                            │
-│     ├─ feature/data-pipeline     (Week 1 work)                                   │
-│     ├─ feature/model-training     (Week 2 work)                                   │
-│     ├─ feature/api-deployment    (Week 3 work)                                   │
-│     └─ feature/monitoring        (Week 4 work)                                   │
-│                                                                                      │
-└──────────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────┐                    ┌──────────────────────────────────────┐
+│  Streamlit        │                    │  FastAPI Backend (EC2)                 │
+│  Dashboard        │                    │  http://13.61.71.115:8000          │
+│  (Local:8501)     │                    │                                      │
+└─────────────────┘                    └──────────────────────────────────────┘
+         │                                          │
+         │  1. GET /api/v1/dashboard/stats           │
+         │  2. GET /api/v1/dashboard/hourly          │
+         │  3. GET /api/v1/dashboard/response-times  │
+         │  4. GET /api/v1/dashboard/high-risk      │
+         │  5. POST /api/v1/predict (live testing)   │
+         │                                          │
+         ▼                                          ▼
+   Display real-time metrics                     PostgreSQL (EC2)
 ```
 
 ---
 
 ## Monitoring & Observability
 
-```
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│                          MONITORING & DRIFT DETECTION                                 │
-├──────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                      │
-│  ┌────────────────────────────────────────────────────────────────────────────────┐ │
-│  │                          PREDICTION LOGGING                                     │ │
-│  │  ────────────────────────────────────────────────────────────────────────────  │ │
-│  │  Every prediction is logged to predictions_log table:                          │ │
-│  │                                                                                 │ │
-│  │  ┌──────────────────────────────────────────────────────────────────────────┐ │ │
-│  │  │  transaction_id │ prediction │ confidence │ model_version │ latency_ms  │ │ │
-│  │  ├──────────────────────────────────────────────────────────────────────────┤ │ │
-│  │  │  TXN-001        │      0     │    0.023    │    v1.0.0     │     12.5    │ │ │
-│  │  │  TXN-002        │      1     │    0.912    │    v1.0.0     │     14.2    │ │ │
-│  │  │  TXN-003        │      0     │    0.045    │    v1.0.0     │     11.8    │ │ │
-│  │  └──────────────────────────────────────────────────────────────────────────┘ │ │
-│  └────────────────────────────────────────────────────────────────────────────────┘ │
-│                                     │                                               │
-│                                     ▼                                               │
-│  ┌────────────────────────────────────────────────────────────────────────────────┐ │
-│  │                         PERFORMANCE MONITORING                                  │ │
-│  │  ────────────────────────────────────────────────────────────────────────────  │ │
-│  │  Weekly batch job compares predictions against ground truth:                   │ │
-│  │                                                                                 │ │
-│  │  ┌──────────────────────────────────────────────────────────────────────────┐ │ │
-│  │  │  Metric         │ Target  │ Current  │ Trend   │ Action                    │ │ │
-│  │  ├──────────────────────────────────────────────────────────────────────────┤ │ │
-│  │  │  Precision      │ ≥ 0.85  │          │         │                           │ │ │
-│  │  │  Recall         │ ≥ 0.90  │          │         │                           │ │ │
-│  │  │  ROC-AUC        │ ≥ 0.95  │          │         │                           │ │ │
-│  │  │  F1-Score       │ ≥ 0.88  │          │         │                           │ │ │
-│  │  │  API Latency    │ < 200ms │          │         │                           │ │ │
-│  │  │  False Positive │ < 5%    │          │         │                           │ │ │
-│  │  └──────────────────────────────────────────────────────────────────────────┘ │ │
-│  └────────────────────────────────────────────────────────────────────────────────┘ │
-│                                     │                                               │
-│                                     ▼                                               │
-│  ┌────────────────────────────────────────────────────────────────────────────────┐ │
-│  │                          DRIFT DETECTION                                       │ │
-│  │  ────────────────────────────────────────────────────────────────────────────  │ │
-│  │  Statistical tests on feature distributions:                                   │ │
-│  │                                                                                 │ │
-│  │  ┌──────────────────────────────────────────────────────────────────────────┐ │ │
-│  │  │  Test           │ Metric    │ Threshold  │ Breach Action                  │ │ │
-│  │  ├──────────────────────────────────────────────────────────────────────────┤ │ │
-│  │  │  PSI            │ 0-1 scale │  > 0.20   │ Flag for review, trigger       │ │ │
-│  │  │  (Population    │           │           │ retraining                     │ │ │
-│  │  │   Stability)    │           │           │                                │ │ │
-│  │  │  KS Test        │ p-value   │  < 0.05   │ Log warning, investigate       │ │ │
-│  │  │  (Kolmogorov-   │           │           │ feature                        │ │ │
-│  │  │   Smirnov)      │           │           │                                │ │ │
-│  │  │  Mean/Std Dev   │ sigma     │  > 3σ      │ Alert ops immediately          │ │ │
-│  │  │  Check          │ shift     │           │                                │ │ │
-│  │  └──────────────────────────────────────────────────────────────────────────┘ │ │
-│  └────────────────────────────────────────────────────────────────────────────────┘ │
-│                                     │                                               │
-│                                     ▼                                               │
-│  ┌────────────────────────────────────────────────────────────────────────────────┐ │
-│  │                            ALERTING                                            │ │
-│  │  ────────────────────────────────────────────────────────────────────────────  │ │
-│  │                                                                                 │ │
-│  │  ┌──────────────────────────────────────────────────────────────────────────┐ │ │
-│  │  │  Alert Type              │ Trigger               │ Notification            │ │ │
-│  │  ├──────────────────────────────────────────────────────────────────────────┤ │ │
-│  │  │  Model degradation       │ Precision/Recall      │ Email + Slack          │ │ │
-│  │  │                          │ drop > 5%            │                        │ │ │
-│  │  │  Data drift detected     │ PSI > 0.2            │ Email warning          │ │ │
-│  │  │  API error rate high     │ Error rate > 1%      │ PagerDuty/Email        │ │ │
-│  │  │  Latency spike           │ p99 > 500ms for 10min │ Warning notification   │ │ │
-│  │  │  Pipeline failure        │ ETL job fails        │ Immediate email + log  │ │ │
-│  │  └──────────────────────────────────────────────────────────────────────────┘ │ │
-│  └────────────────────────────────────────────────────────────────────────────────┘ │
-│                                     │                                               │
-│                                     ▼                                               │
-│  ┌────────────────────────────────────────────────────────────────────────────────┐ │
-│  │                       AUTOMATED RETRAINING                                      │ │
-│  │  ────────────────────────────────────────────────────────────────────────────  │ │
-│  │                                                                                 │ │
-│  │  Trigger: Drift detected OR scheduled monthly OR manual                         │ │
-│  │                                                                                 │ │
-│  │  ┌──────────────────────────────────────────────────────────────────────────┐ │ │
-│  │  │  1. Pull latest 30-day window from transactions_features                  │ │ │
-│  │  │  2. Execute full training pipeline with existing hyperparameters          │ │ │
-│  │  │  3. Validate: New model must meet or exceed current model metrics         │ │ │
-│  │  │  4. If validated:                                                          │ │ │
-│  │  │       - Update model artifact (models/fraud_detector_v{X}.pkl)            │ │ │
-│  │  │       - Increment version                                                  │ │ │
-│  │  │       - Deploy: Restart API with zero-downtime rolling restart             │ │ │
-│  │  │  5. Notify: Send deployment notification with metrics comparison           │ │ │
-│  │  └──────────────────────────────────────────────────────────────────────────┘ │ │
-│  └────────────────────────────────────────────────────────────────────────────────┘ │
-│                                                                                     │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+### Drift Detection (`src/monitoring.py`)
+
+**PSI (Population Stability Index):**
+- Measures feature distribution change since training
+- Bins: 10 + infinity bins
+- Thresholds: < 0.1 (stable), 0.1-0.2 (warning), ≥ 0.2 (critical)
+
+**KS Test (Kolmogorov-Smirnov):**
+- Compares empirical CDFs of two samples
+- p-value < 0.05 = distributions differ significantly
+
+**Drift Metrics Computed For:**
+- All 28 PCA features (V1-V28)
+- Training data vs. production predictions
+
+**Dashboard Display:**
+- PSI heatmap (28 features × status colors)
+- KS test results table (statistic, p-value, status)
+- Feature drift table (top drifted features)
+
+### Alerting System (`src/alerting.py`)
+
+**Alert Types:**
+
+| Alert Type | Threshold | Severity | Action |
+|------------|-----------|----------|--------|
+| API Error Rate | > 1% in 5-min window | warning/critical | Email + log |
+| Latency Spike | p99 > 500ms for 10min | warning/critical | Email + log |
+| Model Degradation | Age > 30 days | warning/critical | Email + log |
+| Pipeline Failure | Any exception | critical | Email + log |
+
+**Email Configuration:**
+- Server: smtp.gmail.com:587
+- Sender: karodiyamuskan2@gmail.com
+- Recipients: karodiyamuskan2@gmail.com
+- Auth: App-Specific Password
+
+**Cron Schedule:**
+```bash
+*/5 * * * * cd /home/ubuntu && /usr/bin/python3 alerting.py >> /var/log/fraud_alerts.log 2>&1
 ```
 
 ---
 
-*Document Version: 1.0*
-*Last Updated: 2025-03-05*
-*Reference: project_guide.md*
+## Retraining Pipeline
+
+### Automated Retraining (`src/retraining.py`)
+
+**Triggers:**
+1. Drift detected (PSI ≥ 0.2 for ≥3 features OR KS p-value < 0.05)
+2. Scheduled monthly (cron: 0 2 1 * *)
+3. Manual override (`--trigger manual`)
+
+**Pipeline Steps:**
+```
+1. TRIGGER → determine reason for retraining
+       ↓
+2. DATA → Pull from transactions_training (30-day window, max 100K rows)
+       ↓
+3. TRAIN → XGBoost with existing hyperparameters (from optuna_study.pkl)
+       ↓
+4. VALIDATE → Compare new model vs baseline (metrics must not degrade)
+       ↓
+5. PROMOTE → If passed: save as fraud_detector_v{N+1}.pkl
+       ↓
+6. DEPLOY → API loads new model on next request cycle
+       ↓
+7. NOTIFY → Email with metrics comparison
+```
+
+**Validation Criteria:**
+| Metric | Minimum Threshold | Relative Change |
+|--------|-------------------|----------------|
+| ROC-AUC | ≥ 0.95 | Must not degrade |
+| Recall | ≥ 0.85 | Must not degrade |
+| Precision | ≥ 0.85 | Must not degrade |
+
+**Important Note:**
+- This project uses static Kaggle data (no new labeled data)
+- Pipeline is implemented per project_guide.md requirements
+- Production model remains v1.0 (trained on full 284,807 rows)
+- Retraining can be run manually for demonstration: `python3 retraining.py --trigger manual --days 30`
+
+---
+
+## Deployment Architecture
+
+### EC2 Instance (AWS)
+
+**Instance Details:**
+- **Public IP:** 13.61.71.115 (Elastic IP)
+- **Region:** ap-south-1 (Mumbai)
+- **Instance Type:** t3.medium (2 vCPU, 4GB RAM)
+- **OS:** Ubuntu 22.04 LTS
+
+### Docker Deployment
+
+**Container:**
+- **Name:** fraud-detection-api
+- **Image:** fraud-detection-api:latest
+- **Port Mapping:** 8000:8000
+- **Restart Policy:** unless-stopped
+- **Health Check:** curl http://localhost:8000/api/v1/health
+
+**Docker Compose:**
+```yaml
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DB_HOST=localhost
+      - DB_PORT=5432
+      - DB_NAME=fraud_detection
+      - DB_USER=postgres
+      - DB_PASSWORD=${DB_PASSWORD}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+```
+
+### Security Groups
+
+| Port | Protocol | Source | Purpose |
+|------|----------|--------|---------|
+| 22 | TCP | My IP only | SSH access |
+| 8000 | TCP | 0.0.0.0/0 | FastAPI |
+| 5432 | TCP | localhost | PostgreSQL (internal only) |
+
+---
+
+## File Organization
+
+```
+Real-Time-Fraud-Detection-in-Digital-Payments/
+├── app/                          # FastAPI Application
+│   ├── main.py                   # 14 endpoints, middleware
+│   ├── model.py                  # ModelService singleton
+│   ├── schemas.py                # Pydantic models
+│   ├── config.py                 # Configuration
+│   ├── auth.py                   # API key authentication
+│   ├── logging_config.py         # Dual logging (JSONL + DB)
+│   ├── dashboard_data.py         # Dashboard data endpoints
+│   ├── rate_limit.py             # Rate limiting
+│   └── exceptions.py             # Custom exceptions
+│
+├── dashboard/                    # Streamlit Dashboard
+│   ├── app.py                    # Overview page
+│   ├── config.py                 # Dashboard config
+│   ├── pages/
+│   │   ├── 1_Model_Performance.py
+│   │   ├── 2_Transactions.py
+│   │   ├── 3_API_Health.py
+│   │   └── 4_Drift_Monitor.py
+│   └── utils/
+│       ├── data_loader.py        # PostgreSQL queries
+│       ├── api_client.py         # HTTP client
+│       ├── charts.py             # Plotly charts
+│       └── feature_preprocessing.py
+│
+├── src/                          # Data Processing & Training
+│   ├── config.py
+│   ├── data_ingestion.py         # ETL pipeline
+│   ├── feature_engineering.py    # Feature transformations
+│   ├── model_training.py         # Model training
+│   ├── monitoring.py             # Drift detection
+│   ├── alerting.py               # Email alerting
+│   ├── retraining.py             # Automated retraining
+│   └── populate_training.py      # Populate training table
+│
+├── models/                       # Model Artifacts
+│   ├── fraud_detector_v1.pkl     # Production model
+│   ├── metadata.json             # Model metrics
+│   └── optuna_study.pkl          # Hyperparameters
+│
+├── docs/                         # Documentation
+│   ├── architecture.md           # This file
+│   ├── infrastructure.md          # AWS/EC2 setup
+│   └── monitoring_strategy.md    # Alerting & drift detection
+│
+├── database/                     # SQL Schemas
+│   └── alerts_schema.sql
+│
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+├── .env.example
+└── README.md
+```
+
+---
+
+*Last Updated: 2026-03-27*
+*Version: 1.0 - Week 4 Complete*

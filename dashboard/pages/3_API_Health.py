@@ -13,9 +13,9 @@ sys.path.insert(0, str(project_root))
 import streamlit as st
 
 from dashboard.utils.api_client import check_health, get_api_metrics, format_api_status
-from dashboard.utils.data_loader import load_errors_log, get_hourly_stats, get_response_times
+from dashboard.utils.data_loader import load_errors_log, get_hourly_stats, get_response_times, get_alerts, get_alert_summary
 from dashboard.utils.charts import create_response_time_chart, create_volume_chart
-from dashboard.config import SUCCESS, DANGER, BLUE, inject_shared_styles, build_sidebar
+from dashboard.config import SUCCESS, DANGER, BLUE, WARNING, inject_shared_styles, build_sidebar
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -38,7 +38,7 @@ with col1:
     <div style="display: flex; align-items: center; margin-bottom: 16px; margin-top: 25px;">
         <div>
             <div style="font-size: 20px; font-weight: 700; color: #333333;">⚕️ API Health Monitoring</div>
-            <div style="font-size: 11px; color: #757575; margin-top: 2px;">EC2 instance · {API_BASE_URL} · Live checks</div>
+            <div style="font-size: 11px; color: #757575; margin-top: 2px;">EC2 instance · Live API health checks</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -121,17 +121,11 @@ with col3:
 response_times = get_response_times(limit=100)
 
 if response_times:
-    # Single card with header and chart inside
-    st.markdown("""
-    <div style="background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-            <div style="font-size: 13px; font-weight: 600; color: #333333;">📊 Response Time — Last 100 Requests</div>
-            <div style="font-size: 11px; color: #757575;">Horizontal line at 200ms SLA threshold</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    fig = create_response_time_chart(response_times)
-    st.plotly_chart(fig, use_container_width=False, width=700, config={'displayModeBar': False})
+    with st.container(border=True):
+        st.markdown("**📊 Response Time — Last 100 Requests**")
+        st.caption("Horizontal line at 200ms SLA threshold")
+        fig = create_response_time_chart(response_times)
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 else:
     st.markdown("""
     <div style="background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px;">
@@ -154,17 +148,11 @@ else:
 hourly_data = get_hourly_stats(hours=24)
 
 if hourly_data['volumes']:
-    # Single card with header and chart inside
-    st.markdown("""
-    <div style="background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-            <div style="font-size: 13px; font-weight: 600; color: #333333;">📊 Request Volume — Last 24 Hours</div>
-            <div style="font-size: 11px; color: #757575;">Requests per hour from prediction logs</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    fig = create_volume_chart(hourly_data)
-    st.plotly_chart(fig, use_container_width=False, width=700, config={'displayModeBar': False})
+    with st.container(border=True):
+        st.markdown("**📊 Request Volume — Last 24 Hours**")
+        st.caption("Requests per hour from prediction logs")
+        fig = create_volume_chart(hourly_data)
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 else:
     st.markdown("""
     <div style="background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px;">
@@ -185,11 +173,11 @@ else:
 # ═══════════════════════════════════════════════════════════════════════
 
 # Build the entire errors table content as HTML
-errors = load_errors_log(limit=20)
+errors = load_errors_log(limit=10)
 table_rows_html = ""
 
 if errors:
-    for err in errors[:20]:
+    for err in errors[:10]:
         timestamp = err.get('timestamp', '')
         endpoint = err.get('endpoint', 'unknown')
         error_type = err.get('error_type', 'Error')
@@ -215,8 +203,65 @@ st.markdown(f"""
 <div style="background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px;">
     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
         <div style="font-size: 13px; font-weight: 600; color: #333333;">🔴 Recent Errors</div>
-        <div style="font-size: 11px; color: #757575;">Source: logs/errors.jsonl · Last 20</div>
+        <div style="font-size: 11px; color: #757575;">Source: logs/errors.jsonl · Last 10</div>
     </div>
     {table_rows_html}
+</div>
+""", unsafe_allow_html=True)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# ALERTS TABLE
+# ═══════════════════════════════════════════════════════════════════════
+
+# Get alert summary and recent alerts
+alert_summary = get_alert_summary()
+alerts = get_alerts(limit=10)
+
+# Build alerts table content
+alert_rows_html = ""
+
+if alerts:
+    for alert in alerts:
+        timestamp = alert.get('timestamp', '')
+        alert_type = alert.get('alert_type', 'unknown')
+        severity = alert.get('severity', 'info')
+        title = alert.get('title', 'No title')
+
+        # Format timestamp
+        if timestamp:
+            try:
+                import pandas as pd
+                ts = pd.to_datetime(timestamp, utc=True)
+                time_str = ts.strftime('%H:%M:%S')
+            except:
+                time_str = str(timestamp)[:8]
+        else:
+            time_str = 'Unknown'
+
+        # Severity badge color
+        severity_colors = {
+            'critical': {'bg': 'rgba(244,67,54,0.1)', 'text': '#F44336'},
+            'warning': {'bg': 'rgba(255,193,7,0.12)', 'text': '#e65100'},
+            'info': {'bg': 'rgba(33,150,243,0.1)', 'text': '#2196F3'}
+        }
+        severity_style = severity_colors.get(severity, severity_colors['info'])
+
+        alert_rows_html += f"""<div style="display: flex; align-items: center; padding: 8px 10px; border-bottom: 1px solid #f0f0f0;"><span style="flex: 0 0 60px; color: #757575; font-size: 11px;">{time_str}</span><span style="flex: 0 0 100px; font-size: 10px; color: #4A3C8C; text-transform: capitalize;">{alert_type.replace('_', ' ')}</span><span style="flex: 0 0 auto; font-size: 10px; background: {severity_style['bg']}; color: {severity_style['text']}; padding: 1px 6px; border-radius: 3px; text-transform: capitalize;">{severity}</span><span style="flex: 1; font-size: 11px; color: #333333; padding-left: 10px;" title="{title}">{title[:60]}{'...' if len(str(title)) > 60 else ''}</span></div>"""
+else:
+    alert_rows_html = """<div style="text-align: center; padding: 40px 20px; color: #757575;"><div style="font-size: 32px;">✅</div><div style="font-size: 13px;">No alerts in last 24 hours</div></div>"""
+
+# Get severity counts for subtitle
+severity_counts = alert_summary['by_severity']
+total_alerts = alert_summary['total']
+
+# Render alerts card
+st.markdown(f"""
+<div style="background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+        <div style="font-size: 13px; font-weight: 600; color: #333333;">🔔 System Alerts</div>
+        <div style="font-size: 11px; color: #757575;">Last 7 days: {total_alerts} total ({severity_counts['critical']} critical, {severity_counts['warning']} warning)</div>
+    </div>
+    {alert_rows_html}
 </div>
 """, unsafe_allow_html=True)

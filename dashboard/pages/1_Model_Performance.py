@@ -137,17 +137,11 @@ dist_data = get_probability_distribution()
 chart_content = ""
 
 if dist_data['bins']:
-    # Single card with header and chart inside
-    st.markdown("""
-    <div style="background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px;">
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-            <div style="font-size: 13px; font-weight: 600; color: #333333;">📊 Fraud Probability Distribution</div>
-            <div style="font-size: 11px; color: #757575;">From prediction logs · Threshold at 0.5</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    fig = create_probability_distribution(dist_data)
-    st.plotly_chart(fig, use_container_width=False, width=700, config={'displayModeBar': False})
+    with st.container(border=True):
+        st.markdown("**📊 Fraud Probability Distribution**")
+        st.caption("From prediction logs · Threshold at 0.5")
+        fig = create_probability_distribution(dist_data)
+        st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
 else:
     st.markdown("""
     <div style="background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px;">
@@ -175,17 +169,11 @@ with col1:
     risk_counts = stats['risk_counts']
 
     if sum(risk_counts.values()) > 0:
-        # Single card with header and chart inside
-        st.markdown("""
-        <div style="background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px;">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                <div style="font-size: 13px; font-weight: 600; color: #333333;">🥧 Risk Level Breakdown</div>
-                <div style="font-size: 11px; color: #757575;">From prediction logs</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        fig = create_risk_pie_chart(risk_counts)
-        st.plotly_chart(fig, use_container_width=False, width=400, config={'displayModeBar': False})
+        with st.container(border=True):
+            st.markdown("**🥧 Risk Level Breakdown**")
+            st.caption("From prediction logs")
+            fig = create_risk_pie_chart(risk_counts)
+            st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
     else:
         st.markdown("""
         <div style="background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px;">
@@ -210,11 +198,11 @@ with col2:
     cm_content = create_confusion_matrix_html(tp, fp, tn, fn)
 
     st.markdown(f"""
-    <div style="background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px;">
+    <div style="background: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 8px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin-bottom: 12px; min-height: 432px; display: flex; flex-direction: column;">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
             <div style="font-size: 13px; font-weight: 600; color: #333333;">🔲 Confusion Matrix</div>
             <div style="font-size: 11px; color: #757575;">Based on model training performance</div>
         </div>
-        {cm_content}
+        <div style="flex: 1; display: flex; flex-direction: column; justify-content: center;">{cm_content}</div>
     </div>
     """, unsafe_allow_html=True)
