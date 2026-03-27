@@ -53,8 +53,6 @@ Example_Repos_To_Refer/
 *.pdf
 
 # Week 3+ files (not yet ready for commit)
-# infrastructure.md removed 2026-03-27 - now ready for commit
-src/monitoring.py
 
 # Production requirements (not committed)
 requirements-prod.txt
