@@ -52,9 +52,6 @@ airflow/
 Example_Repos_To_Refer/
 *.pdf
 
-# Week 3+ files (not yet ready for commit)
-docs/infrastructure.md
-src/monitoring.py
 
 # Production requirements (not committed)
 requirements-prod.txt
