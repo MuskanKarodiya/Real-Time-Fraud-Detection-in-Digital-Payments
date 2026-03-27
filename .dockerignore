@@ -1,0 +1,59 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+venv/
+env/
+ENV/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+pytest.ini
+tests/
+
+# Data files (too large for image)
+*.csv
+data/raw/
+data/processed/
+
+# Documentation
+*.md
+docs/
+notebooks/
+*.ipynb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Example repos
+Example_Repos_To_Refer/
+
+# Model artifacts (will be copied separately if needed)
+# models/  # Uncomment if models are large

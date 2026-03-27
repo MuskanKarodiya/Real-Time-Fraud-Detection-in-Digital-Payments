@@ -1,0 +1,71 @@
+{
+  "report_date": "2026-03-17T15:11:10.188936",
+  "model_version": "1.0",
+  "model_name": "Fraud Detector v1.0",
+  "algorithm": "XGBoost",
+  "technique": "baseline",
+  "decision_threshold": 0.5,
+  "dataset": {
+    "train_samples": 227845,
+    "test_samples": 56962,
+    "features": 31,
+    "fraud_rate_train": 0.001729245759178389,
+    "fraud_rate_test": 0.0017204452090867595
+  },
+  "performance": {
+    "roc_auc": 0.9814033555177839,
+    "recall": 0.8469387755102041,
+    "precision": 0.8645833333333334,
+    "f1_score": 0.8556701030927835,
+    "specificity": 0.9997713843556556
+  },
+  "confusion_matrix": {
+    "true_negatives": 56851,
+    "false_positives": 13,
+    "false_negatives": 15,
+    "true_positives": 83
+  },
+  "kpi_status": {
+    "roc_auc_pass": true,
+    "recall_pass": false,
+    "precision_pass": true,
+    "total_passed": 2
+  },
+  "feature_importance": {
+    "top_5_features": [
+      {
+        "Feature": "v14",
+        "Importance": 0.38976702094078064
+      },
+      {
+        "Feature": "v10",
+        "Importance": 0.14778828620910645
+      },
+      {
+        "Feature": "v4",
+        "Importance": 0.0849766656756401
+      },
+      {
+        "Feature": "v17",
+        "Importance": 0.036432523280382156
+      },
+      {
+        "Feature": "v20",
+        "Importance": 0.03124362975358963
+      }
+    ]
+  },
+  "limitations": [
+    "Extreme class imbalance (0.17% fraud rate)",
+    "PCA features lack interpretability",
+    "Model may drift over time as fraud patterns evolve",
+    "False positives may impact customer experience"
+  ],
+  "deployment_recommendations": [
+    "Start with shadow mode testing",
+    "Monitor predictions and fraud rates daily",
+    "Set up alerts for performance degradation",
+    "Retrain weekly initially, then monthly",
+    "Use A/B testing for new model versions"
+  ]
+}
