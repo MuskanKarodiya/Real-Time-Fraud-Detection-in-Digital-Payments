@@ -8,6 +8,9 @@ data/processed/*.csv
 *.pth
 *.h5
 
+# Exception: commit the production model
+!models/fraud_detector_v1.pkl
+
 # Environment variables (contains secrets!)
 .env
 
