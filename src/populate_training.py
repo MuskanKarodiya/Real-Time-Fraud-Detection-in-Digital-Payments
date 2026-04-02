@@ -5,6 +5,7 @@ MINIMAL CHUNK VERSION - Processes 500 rows at a time to avoid memory issues on t
 """
 
 import logging
+import os
 import psycopg2
 from psycopg2.extras import execute_values
 import numpy as np
@@ -14,11 +15,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 DB_CONFIG = {
-    "host": "localhost",
-    "port": 5432,
-    "database": "fraud_detection",
-    "user": "postgres",
-    "password": "new_fraud_pass_2025",
+    "host": os.getenv("DB_HOST", "localhost"),
+    "port": int(os.getenv("DB_PORT", 5432)),
+    "database": os.getenv("DB_NAME", "fraud_detection"),
+    "user": os.getenv("DB_USER", "postgres"),
+    "password": os.getenv("DB_PASSWORD", ""),
 }
 
 
