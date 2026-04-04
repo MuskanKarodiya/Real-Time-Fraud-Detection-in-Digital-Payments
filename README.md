@@ -56,7 +56,7 @@ The system is divided into 6 layers:
 
 | Layer | Components |
 |-------|-----------|
-| **1. Ingestion** | Kaggle CSV + API Feed → Airflow DAGs → PostgreSQL Raw DB |
+| **1. Ingestion** | Kaggle CSV + API Feed → CRON Job Scheduling → PostgreSQL Raw DB |
 | **2. Processing** | ETL Pipeline → Data Validation → Feature Engineering → PostgreSQL Processed DB |
 | **3. Training** | XGBoost Training Module → Model Registry |
 | **4. Serving** | FastAPI `/predict` → Model Inference Logic → Prediction Logs DB |
